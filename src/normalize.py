@@ -177,6 +177,13 @@ def add_blocking_columns(df, name_col=None, addr_col=None):
     df["_blob"] = (
         df[name_col].map(core_name) + " " + df[addr_col].map(core_addr)
     ).str.strip()
+
+    # business_name + business_address are ~4GB of Python strings across the
+    # 10.3M S2+S3 records and are not needed again until the feature stage,
+    # which re-reads just the rows that survived blocking. Holding them here
+    # is what pushes the run into swap.
+    if C.BLOCK_DROP_TEXT:
+        df = df.drop(columns=[c for c in (name_col, addr_col) if c in df.columns])
     return df
 
 

@@ -51,16 +51,23 @@ def recall_at_k(truth, cands, ks=(5, 10, 20, 30, 50)):
     return pd.DataFrame(rows)
 
 
-def featurize(pairs, s1, others):
-    """Attach heavy normalized forms to just the records in `pairs`, then score.
+def featurize(pairs, which):
+    """Build pair features, re-reading source text for surviving records only.
 
-    Running add_feature_columns over all ~10M records would cost several GB;
-    after blocking only a fraction of them appear in any candidate pair.
+    Blocking drops business_name / business_address to stay inside the RAM
+    budget, so the text is streamed back from disk here — for the fraction of
+    records that actually appear in a candidate pair, not all 10M.
     """
+    p1, p2, p3 = D.source_paths(which)
     need_s1 = set(pairs["s1_id"].unique())
     need_ot = set(pairs["cand_id"].unique())
-    s1f = add_feature_columns(s1[s1[C.ID].isin(need_s1)])
-    otf = add_feature_columns(others[others[C.ID].isin(need_ot)])
+    log(f"re-reading text for {len(need_s1):,} S1 and {len(need_ot):,} S2/S3 records")
+
+    s1f = add_feature_columns(D.load_records_by_id(p1, need_s1))
+    otf = add_feature_columns(pd.concat(
+        [D.load_records_by_id(p2, need_ot), D.load_records_by_id(p3, need_ot)],
+        ignore_index=True,
+    ))
     feat = F.build_pair_features(pairs, s1f, otf)
     del s1f, otf
     gc.collect()
@@ -110,7 +117,7 @@ def main(blocking_only=False, sample=None):
     if blocking_only:
         return
 
-    others = pd.concat([s2, s3], ignore_index=True)
+    # S2/S3 are done with — featurize() re-reads the text it needs from disk.
     del s2, s3
     gc.collect()
 
@@ -121,7 +128,7 @@ def main(blocking_only=False, sample=None):
     ]
     log(f"positives {int(pairs['y'].sum()):,} / {len(pairs):,} pairs")
 
-    X = featurize(pairs, s1, others)
+    X = featurize(pairs, "train")
     y = pairs["y"].values
     groups = pairs["s1_id"].values
     log(f"features built: {X.shape}")
@@ -160,7 +167,7 @@ def main(blocking_only=False, sample=None):
                  key=lambda t: -t[1])[:12]
     print("  top features:", [f"{k}={v:.0f}" for k, v in imp])
 
-    del X, pairs, cands, cand_sets, s1, others
+    del X, pairs, cands, cand_sets, s1
     gc.collect()
 
     # --- test: full set, never sampled ---
@@ -169,13 +176,12 @@ def main(blocking_only=False, sample=None):
     t_cands = blocking.generate_candidates(t1, t2, t3)
     log("test blocking done")
 
-    t_others = pd.concat([t2, t3], ignore_index=True)
     del t2, t3
     gc.collect()
 
     t_pairs = blocking.candidates_to_frame(t_cands)
     log(f"test pairs: {len(t_pairs):,}")
-    TX = featurize(t_pairs, t1, t_others)
+    TX = featurize(t_pairs, "test")
     TX = TX.reindex(columns=models[0].feature_name(), fill_value=0.0)
     scores = np.mean([m.predict(TX, num_iteration=m.best_iteration) for m in models], axis=0)
 

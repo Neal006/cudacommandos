@@ -78,6 +78,26 @@ BLOCK_MAX_DF = 0.01
 # times the average number of records sharing a token. Drop it if you OOM.
 BLOCK_CHUNK = 2000
 
+# Documents sampled to FIT the TF-IDF vocabulary. Document-frequency estimates
+# are a statistical question — a 1M-document sample gives essentially the same
+# answer as all 10.5M while fitting ~10x faster and holding a far smaller
+# vocabulary dict. Every document is still transformed; only the fit samples.
+BLOCK_FIT_SAMPLE = 1_000_000
+
+# Minimum document frequency. Tokens appearing once or twice across 10M records
+# are almost always typos, and they dominate vocabulary size.
+BLOCK_MIN_DF = 3
+
+# Records transformed per batch when building the index matrix. Bounds peak
+# memory during the transform, which is otherwise a single huge allocation.
+BLOCK_INDEX_BATCH = 500_000
+
+# Drop business_name / business_address after computing the blocking blob.
+# Those two columns are ~4GB of Python strings across 10.3M records and are
+# not needed again until the feature stage, which re-reads just the rows that
+# survived blocking. Set False only if you have RAM to spare.
+BLOCK_DROP_TEXT = True
+
 # Train the matcher on a random subsample of Source-1 entities. 2.2M entities
 # is far more than a pairwise matcher needs, and the full set will not fit in
 # the ~10GB of RAM available here. Blocking and inference still run over the

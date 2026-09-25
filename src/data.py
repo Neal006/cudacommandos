@@ -90,6 +90,38 @@ def load_split(which: str, sample=None, seed=C.SEED):
     return [add_blocking_columns(f) for f in frames]
 
 
+def load_records_by_id(path, ids, chunksize=1_000_000) -> pd.DataFrame:
+    """Read only the rows whose entity_id is in `ids`, streaming the file.
+
+    The feature stage needs business_name / business_address, but only for
+    records that survived blocking — a small fraction of the 10M. Streaming
+    and filtering per chunk keeps peak memory to one chunk instead of the
+    whole file, which is what lets blocking drop those columns entirely.
+    """
+    ids = set(ids)
+    if not ids:
+        return pd.DataFrame(columns=USECOLS)
+    keep = []
+    for chunk in pd.read_csv(
+        path, sep="\t", dtype=str, keep_default_na=False,
+        usecols=lambda c: c in USECOLS, chunksize=chunksize,
+    ):
+        hit = chunk[chunk[C.ID].isin(ids)]
+        if len(hit):
+            keep.append(hit)
+    if not keep:
+        return pd.DataFrame(columns=USECOLS)
+    return pd.concat(keep, ignore_index=True)
+
+
+def source_paths(which: str):
+    """(source1, source2, source3) paths for 'train' or 'test'."""
+    return {
+        "train": (C.TRAIN_S1, C.TRAIN_S2, C.TRAIN_S3),
+        "test": (C.TEST_S1, C.TEST_S2, C.TEST_S3),
+    }[which]
+
+
 def check_test_files():
     """Confirm every test source exists before a run that ends in a submission."""
     missing = [p.name for p in (C.TEST_S1, C.TEST_S2, C.TEST_S3) if not Path(p).exists()]
