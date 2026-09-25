@@ -33,7 +33,7 @@ import config as C
 import normalize as N
 
 PAIR_CHUNK = 2_000_000
-_WORKERS = max(1, (os.cpu_count() or 2) - 1)
+_WORKERS = C.WORKERS
 _REC_CHUNK = 100_000
 
 OLD_COLUMNS = [

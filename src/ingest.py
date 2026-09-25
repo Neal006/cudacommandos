@@ -10,7 +10,6 @@ The blob is produced by the very same `normalize.core_name/core_addr`, so the
 result is identical to `add_blocking_columns` and candidate caches built by
 either path are interchangeable.
 """
-import os
 from multiprocessing import Pool
 
 import pandas as pd
@@ -36,7 +35,7 @@ def read_polars(path) -> pl.DataFrame:
 
 def blocking_frame(paths, workers=None) -> pd.DataFrame:
     """[entity_id, country, _blob] for one or more source files, blobs built in parallel."""
-    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    workers = workers or C.WORKERS
     frames = []
     for p in paths:
         df = read_polars(p)
