@@ -17,6 +17,11 @@ xgboost>=2.0
 # string similarity (MIT) - core to entity resolution
 rapidfuzz>=3.9
 
+# v2 pipeline (src/ingest.py, features_v2.py, blocking.py)
+polars>=1.0            # MIT — lean S2/S3 loading (Arrow strings, ~half the RAM)
+anyascii>=0.3          # ISC — offline transliteration of the 9 Indic scripts
+sparse_dot_topn>=1.1   # Apache-2.0 — threaded top-k sparse product; identical candidates, ~2.7x faster
+
 # text / multimodal
 torch>=2.2
 transformers>=4.40

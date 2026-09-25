@@ -2,6 +2,7 @@
 # Train with mlguard watching in the background, then gate the finished run.
 #   tools/mlguard/train_guarded.sh <run_id> [run_pipeline.py args...]
 #   CHAMPION=runs/champion.json tools/mlguard/train_guarded.sh 004_lgbm_translit
+#   PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh 005_v2 --sample 150000
 # Works in Git Bash (Windows) and on Linux/AWS.
 set -euo pipefail
 RUN=${1:?usage: train_guarded.sh <run_id> [pipeline args]}; shift
@@ -14,7 +15,7 @@ export MLGUARD_RUN_DIR="$DIR"
 WATCH=$!
 
 set +e
-python src/run_pipeline.py "$@" 2>&1 | tee "$DIR/pipeline.log"
+python "${PIPELINE:-src/run_pipeline.py}" "$@" 2>&1 | tee "$DIR/pipeline.log"
 RC=${PIPESTATUS[0]}
 set -e
 # a crashed run never writes the end event; write it so the watcher exits

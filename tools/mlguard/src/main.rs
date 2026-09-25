@@ -89,8 +89,10 @@ fn cmd_run(a: &Args, cfg: &Config) -> i32 {
     report(&format!("run {}", s.run_id), &checks::check_run(&s, &cfg.run, champ.as_ref()))
 }
 
-/// Tail metrics.jsonl while training runs. On the first violation write the stop
-/// file (training polls for it) and exit 1. Ends on {"event":"end"} or, with --once, at EOF.
+/// Tail metrics.jsonl while training runs. On a violation, append `<fold><TAB><rule>: <msg>` to
+/// the stop file — training stops THAT fold at its next eval (src/runlog.py) — and keep
+/// watching the remaining folds. Ends on {"event":"end"} (or EOF with --once) and exits 1
+/// if anything was flagged.
 fn cmd_watch(a: &Args, cfg: &Config) -> i32 {
     let p = PathBuf::from(a.pos.get(1).unwrap_or_else(|| die("watch <metrics.jsonl>".into())));
     let stop = a.kv.get("stop-file").map(PathBuf::from)
@@ -99,6 +101,15 @@ fn cmd_watch(a: &Args, cfg: &Config) -> i32 {
     let mut w = Watcher::new(cfg.watch.clone());
     let mut pos = 0u64;
     let mut n = 0usize;
+    let mut found: Vec<Finding> = Vec::new();
+    let finish = |found: &[Finding], n: usize| -> i32 {
+        if found.is_empty() {
+            println!("mlguard watch: {} ticks, no violation", n);
+            0
+        } else {
+            report(&format!("watch {}", p.display()), found)
+        }
+    };
     loop {
         if let Ok(mut file) = fs::File::open(&p) {
             file.seek(SeekFrom::Start(pos)).ok();
@@ -110,12 +121,15 @@ fn cmd_watch(a: &Args, cfg: &Config) -> i32 {
                 if let Ok(t) = serde_json::from_str::<Tick>(line.trim()) {
                     n += 1;
                     if t.event.as_deref() == Some("end") {
-                        println!("mlguard watch: training ended cleanly after {} ticks", n);
-                        return 0;
+                        return finish(&found, n);
                     }
                     if let Some(x) = w.feed(&t) {
-                        fs::write(&stop, format!("{}: {}\n", x.rule, x.msg)).ok();
-                        return report(&format!("watch {}", p.display()), &[x]);
+                        use std::io::Write;
+                        if let Ok(mut fh) = fs::OpenOptions::new().create(true).append(true).open(&stop) {
+                            writeln!(fh, "{}\t{}: {}", t.fold, x.rule, x.msg).ok();
+                        }
+                        eprintln!("mlguard watch: fold {} flagged: {}", t.fold, x.msg);
+                        found.push(x);
                     }
                 }
                 line.clear();
@@ -124,8 +138,7 @@ fn cmd_watch(a: &Args, cfg: &Config) -> i32 {
             die(format!("{}: not found", p.display()));
         }
         if once {
-            println!("mlguard watch: {} ticks, no violation", n);
-            return 0;
+            return finish(&found, n);
         }
         thread::sleep(Duration::from_millis(cfg.watch.poll_ms));
     }

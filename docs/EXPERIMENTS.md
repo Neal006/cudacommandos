@@ -168,11 +168,41 @@ per-country breakdown of the *matcher* shows India dragging.
 
 ---
 
-## 003 — (next)
+## 003–005 — v2 pipeline on a 30k-entity sample (OOF only)
+2026-09-25/26 · Neal (Claude) · branch `nealstuff`
+Question: how much does each v2 layer add over the old feature set, all else equal?
+Setup:    `PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh <id> --sample 30000 --train-only`
+          same cached candidates (K=30, recall 0.9496), GroupKFold(5) by S1, laptop RTX 3050 4 GB.
 
-Not yet run. The full pipeline (`src/run_pipeline.py`, no flag) is ~6–7 hours
-end to end, dominated by test blocking. It produces the first real OOF F_0.5
-about 40 minutes in, well before the test phase.
+| Layer (OOF macro F_0.5) | 003 | 004 (stop fix) | 005 (+reranker) |
+|---|---:|---:|---:|
+| old 27 features, global threshold (`--ablate`) | 0.9266 | – | – |
+| stage 1: v2 features (+translit, skeleton, house no., legal form, domain, label-free S1 stats) | 0.9491 | 0.9490 | 0.9490 |
+| stage 2: + competition / peer context | 0.9507 | 0.9508 | **0.9600** ⚠ |
+| decision layer (calibrate + assign + expected-F) | 0.9510 | 0.9512 | crashed (OOM, see below) |
+
+Per country (004): India 0.9369, US 0.9606. Predicted singletons 6.5% vs 5.8% true; 3.13 links/entity.
+Global threshold lands at 0.68. Every decision mode is within 0.0005 — stage 2's claim features already
+encode the partition, so assignment adds ~nothing. Stage-2 gain: p1 72%, n_strong_claims 14%, p1_rank 6%.
+
+Reranker (`src/gpu/reranker.py`, e5-small, frozen word embeddings, bf16):
+- smoke (24k/6k entity split of the same sample): held-out AUC 0.9989, AP 0.9909 vs block_sim AUC 0.9566;
+  train 390 pairs/s, inference 1,870 pairs/s.
+- run 005: trained on 20k entities **outside** the sample (257k pairs, 11 min, valid AUC 0.9987); the
+  0.2–0.8 band is only **1.2% of pairs** (10.5k scored in 23 s) and lifted stage 2 by +0.009.
+
+Read:
+- v2 features are the big win (+0.0225). Stage 2 +0.0017, decision layer +0.0004.
+- ⚠ **Reranker +0.009 is not yet trusted.** S1 entities are disjoint, but an S2/S3 *record* can be in both
+  the reranker's training pairs (e.g. as a hard negative of another entity) and the GBDT sample's candidates
+  — memorised records do not exist at test time. Next: exclude every `cand_id` of the GBDT sample from
+  `make_training_pairs`, retrain, rerun 005. Keep the reranker only if the gain survives.
+- Run 005 died with MemoryError in the decision layer because an ad-hoc audit script was started next to it
+  (run 004 passed the same step). Re-run alone.
+- mlguard fixes found by these runs: `loss_ratio` false positive (now needs a stalled valid loss), a guard
+  stop now rolls LightGBM back to the best valid iteration (it used the stop iteration), NaN in
+  summary.json → null (strict JSON).
+- Train/valid F@0.5 gap: stage 1 ≈ 0.03 (train F is in-sample), stage 2 ≈ 0.007–0.014; mlguard run PASS.
 
 Open questions worth an entry each:
 

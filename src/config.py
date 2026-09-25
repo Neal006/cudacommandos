@@ -120,6 +120,10 @@ TRAIN_SAMPLE = 150_000
 # training. Nothing here may hard-code {US, India}.
 BLOCK_WITHIN_COUNTRY = True
 
+# Threads for sparse_dot_topn's top-k product (-1 = all cores but one). Results
+# are identical to the scipy path; only speed changes.
+BLOCK_THREADS = int(os.environ.get("AMLC_BLOCK_THREADS", "-1"))
+
 # --- matcher ---
 N_FOLDS = 5
 # F_0.5 weights precision 2x over recall, so the decision threshold sits well
