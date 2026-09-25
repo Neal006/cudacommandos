@@ -36,9 +36,12 @@ def _containment(a: set, b: set) -> float:
 def _num_agreement(a: set, b: set) -> float:
     """-1 both have digits and none match, 0 one side missing, 1 some match.
 
-    Numeric tokens (PIN codes, house numbers) are high precision in both
-    directions, so disagreement gets its own signal rather than collapsing
-    into 'no evidence'.
+    Mostly house numbers. Postal codes are nearly absent from this dataset —
+    measured on test Source 1: India 0.2%, US 11.0%, France 0.4% of addresses
+    contain a 5-6 digit code (ANALYSIS.md Q11 agrees). So this feature carries
+    house/unit numbers, not PIN/ZIP, and blocking on postal code is not an
+    option. Numbers are high precision in both directions, so disagreement
+    gets its own signal rather than collapsing into 'no evidence'.
     """
     if not a or not b:
         return 0.0
@@ -103,7 +106,7 @@ def build_pair_features(pairs: pd.DataFrame, s1: pd.DataFrame, others: pd.DataFr
     f["addr_containment"] = [_containment(a, b) for a, b in zip(lat, rat)]
     f["addr_len_diff"] = np.abs(laddr.str.len().values - raddr.str.len().values)
 
-    # --- numeric agreement: PIN codes, house numbers ---
+    # --- numeric agreement: house/unit numbers (postal codes are ~absent) ---
     f["addr_num_agree"] = [
         _num_agreement(a, b) for a, b in zip(left["_addr_nums"], right["_addr_nums"])
     ]

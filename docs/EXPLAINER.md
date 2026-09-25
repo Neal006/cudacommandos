@@ -230,7 +230,7 @@ similar they are (`src/features.py`):
 | Name similarity | edit distance, token-sort ratio, Jaro-Winkler |
 | Token overlap | Jaccard, containment |
 | Address | same measures on the address |
-| Numbers | do the PIN codes / house numbers agree? |
+| Numbers | do the house/unit numbers agree? (postal codes barely exist here — India 0.2%, US 11%, France 0.4%) |
 | Acronyms | does "ich" match "indian coffee house"? |
 | **Competition** | is this the *best* candidate for this business? how far ahead of second place? |
 

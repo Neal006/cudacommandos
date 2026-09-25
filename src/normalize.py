@@ -23,7 +23,14 @@ LEGAL_SUFFIXES = {
     # French forms: test is 15% France with zero French training examples,
     # so these have to be handled from the tables rather than learned.
     "sasu", "eurl", "sci", "snc", "scop", "scm", "selarl",
+    # Function words carry no identifying signal in a business name. English
+    # ones were always stripped here; the French equivalents were not, which
+    # left core_name() and core_addr() disagreeing on the same tokens —
+    # "Maison de Sante" kept its "de" as a name but lost it as an address.
+    # Measured on real French test rows: " de " 6.1% of names, " du " 4.2%,
+    # " des " 3.0%.
     "and", "the", "of",
+    "de", "du", "des", "la", "le", "les", "et", "aux", "au",
 }
 
 # Abbreviation expansions, applied to both names and addresses.
@@ -138,7 +145,11 @@ def core_addr(s) -> str:
 
 
 def numeric_tokens(s) -> set:
-    """Digits in the string: house numbers, PIN/ZIP codes, unit numbers.
+    """Digits in the string — in practice house and unit numbers.
+
+    Postal codes barely exist here (India 0.2%, US 11.0%, France 0.4% of
+    addresses carry a 5-6 digit code), so do not treat this as a PIN/ZIP
+    signal and do not block on postal code.
 
     These are high-precision signals — two addresses agreeing on 560001 is
     strong evidence, and disagreeing on it is strong evidence against.
