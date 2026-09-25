@@ -34,6 +34,35 @@ def log(msg):
     print(f"[{time.time() - T0:7.1f}s] {msg}", flush=True)
 
 
+def cached_candidates(s1, s2, s3, which, sample):
+    """Blocking, memoized to disk.
+
+    Test blocking is ~4-5 hours at measured throughput (India 75 q/s, US 150
+    q/s over a 10M index). Recomputing it on every matcher experiment would
+    make iteration impossible, so the flat candidate frame is written to
+    parquet and keyed on every parameter that changes the result.
+    """
+    key = (f"{which}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
+           f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{sample or 'all'}")
+    path = C.INTERIM / f"cands_{key}.parquet"
+
+    if path.exists():
+        log(f"loading cached candidates: {path.name}")
+        frame = pd.read_parquet(path)
+    else:
+        cands = blocking.generate_candidates(s1, s2, s3)
+        frame = blocking.candidates_to_frame(cands)
+        frame.to_parquet(path, index=False)
+        log(f"cached candidates -> {path.name} ({len(frame):,} pairs)")
+        return cands, frame
+
+    # rebuild the dict form, preserving the every-entity-gets-a-key invariant
+    cands = {sid: [] for sid in s1[C.ID]}
+    for sid, grp in frame.groupby("s1_id", sort=False):
+        cands[sid] = list(zip(grp["cand_id"], grp["block_sim"]))
+    return cands, frame
+
+
 def recall_at_k(truth, cands, ks=(5, 10, 20, 30, 50)):
     """Recall ceiling as a function of candidates kept per entity.
 
@@ -104,7 +133,7 @@ def main(blocking_only=False, sample=None):
     truth = D.read_ground_truth(C.TRAIN_GT, keep_ids=s1[C.ID])
     log(f"train: S1={len(s1):,} (sampled) S2={len(s2):,} S3={len(s3):,} gt={len(truth):,}")
 
-    cands = blocking.generate_candidates(s1, s2, s3)
+    cands, pairs = cached_candidates(s1, s2, s3, "train", sample)
     log("train blocking done")
 
     cand_sets = {k: {c for c, _ in v} for k, v in cands.items()}
@@ -121,7 +150,7 @@ def main(blocking_only=False, sample=None):
     del s2, s3
     gc.collect()
 
-    pairs = blocking.candidates_to_frame(cands)
+    pairs = pairs.copy()
     pairs["y"] = [
         1 if cid in truth.get(sid, set()) else 0
         for sid, cid in zip(pairs["s1_id"], pairs["cand_id"])
@@ -173,13 +202,12 @@ def main(blocking_only=False, sample=None):
     # --- test: full set, never sampled ---
     t1, t2, t3 = D.load_split("test")
     log(f"test: S1={len(t1):,} S2={len(t2):,} S3={len(t3):,}")
-    t_cands = blocking.generate_candidates(t1, t2, t3)
+    t_cands, t_pairs = cached_candidates(t1, t2, t3, "test", None)
     log("test blocking done")
 
     del t2, t3
     gc.collect()
 
-    t_pairs = blocking.candidates_to_frame(t_cands)
     log(f"test pairs: {len(t_pairs):,}")
     TX = featurize(t_pairs, "test")
     TX = TX.reindex(columns=models[0].feature_name(), fill_value=0.0)

@@ -144,22 +144,51 @@ At 1.73M × 9.97M, the candidate-generation strategy is the whole ballgame.
 Measured on this machine: 25.5 GB RAM total but ~9.7 GB free, 10 physical
 cores. RAM, not CPU, is the binding constraint.
 
-## 7. Where to start
+## 7. Measured blocking ceiling
 
-```bash
-python src/run_pipeline.py --blocking-only
-```
+Run on a 150k Source-1 sample against the full 10.3M S2+S3 index
+(`max_df=0.01`, `min_df=3`, per-country partitions). **Zero orphans** — every
+entity got candidates.
 
-Prints the blocking recall ceiling at K = 5/10/20/30/50 from a single pass.
-That ceiling is the hard cap on the final score — no matcher can exceed it — so
-it is the first number to look at and the one to optimise before touching the
-model.
+| K | recall ceiling | F_0.5 ceiling | test pairs at that K |
+|---:|---:|---:|---:|
+| 5 | 0.8340 | 0.962 | 8.7M |
+| 10 | 0.9187 | 0.983 | 17.3M |
+| 20 | 0.9411 | 0.988 | 34.7M |
+| **30** | **0.9499** | **0.990** | **52.0M** |
+| 50 | 0.9586 | 0.992 | 86.6M |
 
-Read the ceiling table like this:
+**Recall is not the score, and reading this table as "still climbing, raise K"
+is the trap.** F_0.5 weights precision 2×, so a perfect matcher limited only by
+blocking recall R scores `1.25R / (0.25 + R)` — losing 4% of recall costs under
+1% of score. K=30 → 50 buys **+0.002** of ceiling for **35 million** extra pairs
+to featurize.
+
+`TOP_K = 30` is the setting. The conclusion that matters:
+
+> **Blocking is not the bottleneck. Matcher precision is.**
+> Spend time on features and the threshold, not on recall.
+
+### Throughput (this machine, 10 physical cores)
+
+| Partition | Index size | Queries/sec |
+|---|---:|---:|
+| India | 4.13M | 75 |
+| US | 6.19M | 150 |
+
+India runs 2× slower on a *smaller* index — Indian names and addresses share
+more tokens, so posting lists are denser and each query touches more of the
+matrix. Budget accordingly: full test blocking (1.73M queries: ~810k India,
+~663k US, ~260k France) is **roughly 4–5 hours**.
+
+Candidates are cached to `<data dir>/interim/cands_*.parquet`, keyed on every
+parameter that changes the result, so the cost is paid once and matcher
+experiments reuse it.
+
+### If you re-tune blocking
 
 | Observation | Action |
 |---|---|
-| ≥0.97 at small K | Ceiling is fine. Lower `TOP_K` to save hours, move to the matcher. |
-| Still climbing at K=50 | Raise `TOP_K`. |
-| Plateaus below ~0.90 | Blocking is losing pairs. Raise `BLOCK_MAX_DF` (0.01 → 0.05), or set `BLOCK_WITHIN_COUNTRY=False` to test whether country labels disagree across sources. |
-| Many orphans | `BLOCK_MAX_DF` pruned every token those records had. Raise it. |
+| Ceiling short at your K | Raise `BLOCK_MAX_DF` (0.01 → 0.05) before raising `TOP_K` — it recovers pairs lost to pruning rather than just adding weak candidates. |
+| Many orphans | `BLOCK_MAX_DF`/`BLOCK_MIN_DF` pruned every token those records had. Loosen both. |
+| Suspect country labels disagree across sources | Set `BLOCK_WITHIN_COUNTRY=False` and compare recall. Costs a lot of speed, so only as a diagnostic. |

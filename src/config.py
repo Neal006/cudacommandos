@@ -65,7 +65,16 @@ SEED = 42
 # per entity (mode 3), so 50 leaves plenty of headroom. Raise for recall, lower
 # for speed; check the recall ceiling before tuning anything downstream, since
 # no matcher can beat what blocking hands it.
-TOP_K = 50
+#
+# Measured on train (150k sample, 10.3M index), recall ceiling by K:
+#   K=5 0.8340 | K=10 0.9187 | K=20 0.9411 | K=30 0.9499 | K=50 0.9586
+#
+# Recall is not the score. With F_0.5 weighting precision 2x, a perfect
+# matcher at recall R scores 1.25R/(0.25+R) — so those ceilings translate to
+# F_0.5 of 0.983 / 0.988 / 0.990 / 0.992. Going 30 -> 50 buys +0.002 of
+# ceiling and costs ~35M extra pairs to featurize on test. Not worth it:
+# blocking is not the bottleneck, matcher precision is.
+TOP_K = 30
 
 # Drop tokens appearing in more than this FRACTION of records. This is the
 # lever that keeps the sparse similarity product tractable at 10M records:
