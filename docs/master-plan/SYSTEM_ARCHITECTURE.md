@@ -29,8 +29,15 @@
  leaderboard upload (≤5/day) → docs/EXPERIMENTS.md entry → git tag lb-YYYYMMDD-n
 ```
 
-Instance sizes are a guess based on the RAM Priyanshu measured. Check them with
-`aws/04_check_credits.sh` first.
+Instance sizes are a guess based on the RAM Priyanshu measured. Check remaining
+credits first:
+
+```bash
+aws freetier get-account-plan-state --region us-east-1 --profile amlc
+```
+
+(`aws/04_check_credits.sh` was replaced by `aws/s3.sh`; see
+[`../TEAM_BUCKET.md`](../TEAM_BUCKET.md).)
 
 ## 2. Data flow and artefacts
 
@@ -68,7 +75,7 @@ Submissions: 5/day. **Never upload a run that `mlguard run` fails.**
 |---|---|---|---|
 | 0.1 | Run the existing full pipeline (already built) under `tools/mlguard/train_guarded.sh 002_baseline` with the LLD §9 hooks | Neal | OOF F0.5 + summary.json; mlguard PASS |
 | 0.2 | **LB #1**: baseline upload → calibrates the LB-vs-OOF gap | Neal | score logged in EXPERIMENTS.md |
-| 0.3 | E03: recall ceiling split by country × script × domain × empty-address on the cached 150k candidates | Priyanshu | table in EXPERIMENTS.md |
+| ~~0.3~~ ✅ | E03: recall ceiling split by country × script × domain × empty-address | Priyanshu | **Done** — run 002 in EXPERIMENTS.md. India 0.9132 vs US 0.9735 @K30; empty address is the strongest miss signal (7.8×). `src/analyze_blocking.py` |
 | 0.4 | E07+E08 on baseline OOF: assignment + expected-F vs global threshold | Neal | Δ OOF measured |
 | 0.5 | Start AWS instance + S3 sync of `dataset/` and `interim/` | Priyanshu | `aws s3 ls` shows parquet |
 

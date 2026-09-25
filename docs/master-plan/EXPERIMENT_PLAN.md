@@ -14,7 +14,7 @@ keep the simpler one.
 |---|---|---|---|---|---|
 | E01 | Where does test blocking time go, and can it be parallelized? | Profile pass A on 20k India queries: vectorize / matmul / top-k split; ProcessPool 4/8/12 workers | ≥3× throughput at ≤ 20 GB RAM | If RAM-bound, run on AWS | P0 |
 | E02 | Recall@K per country (not global) | Existing cache, K ∈ {5,10,20,30,50}, split US/India | Numbers per country | — | P0 |
-| E03 | Where are the misses? | Missed true pairs by slice: native-script name, domain name, empty address, junk prefix, no shared token after pruning | A slice holding > 40% of misses | — | P0 |
+| ~~E03~~ **DONE** | Where are the misses? | Missed true pairs by slice: native-script name, domain name, empty address, junk prefix, no shared token after pruning | A slice holding > 40% of misses | — | ✅ run 002 |
 | E04 | Pass B (address) marginal recall | Add pass B K∈{10,15,20}; union recall and candidates/entity | +2 pts recall at ≤ +15 cands | < +0.5 pt → drop | P0 |
 | E05 | Pass C (translit/skeleton) + pass D (reverse) | Add each alone, then both | Recall ≥ 0.985 total at ≤ 60 cands | — | P1 |
 | E06 | Does the training sample need neighbours? (Weakest hypothesis #1) | Random 300k vs geo-cluster 300k; evaluate both on a fully blocked held-out set of localities | Geo ≥ random + 0.003 on the full slice | Equal → keep random (simpler) | P1 |

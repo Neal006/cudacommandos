@@ -65,7 +65,7 @@ or exposing the data and credentials.
 | Asset | Rule |
 |---|---|
 | Dataset (~2.4 GB) | Never committed (`.gitignore` covers `data/ dataset/ *.tsv *.parquet`). Lives in `AMLC_DATA_DIR` and the team S3 bucket only |
-| S3 bucket | Private. The policy grants read to teammate account ARNs only (`aws/02_bucket_policy.json`, verified: no `Principal: *`). Block Public Access ON. SSE-S3 encryption on |
+| S3 bucket | `amazon-cuda-commandos-2026` (ap-south-1), **owned by a teammate's account**, cross-account read+write granted per member. We do not hold the bucket policy, so "no `Principal: *`" is unverified from our side — ask the owner to confirm Block Public Access is ON. Access is via `aws login` SSO, not static keys ([`../TEAM_BUCKET.md`](../TEAM_BUCKET.md)) |
 | Credentials | Never in the repo (`.gitignore`: `.aws-credentials`, `*.pem`, `.env`). Use `aws configure` profiles; rotate keys after the challenge |
 | Outputs | `output/*.tsv` ignored; the uploaded versions are kept as S3 objects named by git tag |
 | Third-party services | No record text is sent to any external service: no LLM chat, no pastebins, no online TSV viewers |

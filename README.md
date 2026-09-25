@@ -7,12 +7,20 @@ Source 3. An entity may match zero, one, or many.
 **Window:** 25 Sep 2026 00:00 IST → 27 Sep 2026 23:59 IST · **5 submissions/day**
 **Metric:** macro-averaged F_0.5 (precision weighted 2×)
 
+## Start here
+
 | Doc | What's in it |
 |---|---|
+| **[`docs/master-plan/`](docs/master-plan/README.md)** | **The plan of record.** Analysis, HLD/LLD, system architecture, experiment plan E01–E18, edge cases, leakage map, model selection |
+| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Append-only run log — **record every leaderboard submission here** |
 | [`docs/DATA_BRIEF.md`](docs/DATA_BRIEF.md) | Measured stats, the train/test country shift, what the scale forces |
 | [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | Output format, rejection rules, metric, final zip, checklist |
-| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Append-only run log — record every leaderboard submission here |
 | [`docs/TEAM_BUCKET.md`](docs/TEAM_BUCKET.md) | Shared S3 bucket: auth, helper script, sharing the candidate cache |
+| [`context/`](context/README.md) | Raw source material — organisers, AWS, team chat, teammate notebooks |
+| [`AGENTS.md`](AGENTS.md) | Conventions for agent-assisted work in this repo |
+
+`context/` holds inputs, `docs/` holds conclusions. Any number in the docs is
+traceable to a measurement in `EXPERIMENTS.md` or a file in `context/`.
 | `Documentation_template.md` | Methodology write-up — graded, fill in as you go |
 
 ---

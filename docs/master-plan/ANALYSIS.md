@@ -141,7 +141,7 @@ issue to Priyanshu**, because we measured everything that depends on the data ou
 
 | Q | Question | Answer | Status |
 |---|---|---|---|
-| B1 | Where does the 5% blocking recall loss live? | Not in the data (99.985% share a token). We think it is concentrated in Indic-script and domain-name records (guess). | 🧪 E03 |
+| B1 | Where does the 5% blocking recall loss live? | **Answered (E03, run 002).** Not in the data (99.985% share a token). Enrichment vs a covered baseline: empty address **7.8×** (24.9% of misses), all Indic combined **3.6×** (26.8%), domain **2.4×** (10.9%). Latin is still 60.7% of misses in absolute terms — the loss is *distributed*, not concentrated. | ✅ |
 | B2 | Is within-country blocking safe? | Yes on train (F7). | ✅ |
 | B3 | Is K=30 right? | Prefer per-pass K with a union over one global K. Look at ceiling per country, not global. | 🧪 E02, E04 |
 | B4 | Should blocking be reverse too (S2→S1)? | Partition means every S2/S3 record needs its best S1. A reverse top-3 pass gives both recall and competition features. | 🧪 E05 |
@@ -181,12 +181,62 @@ it is, and attack the weakest first.)*
 |---|---|---|---|---|---|
 | **1** | **"A random 150k-S1 sample trains a matcher that behaves like the full test run."** | Pairwise features don't care who else is in the sample. | With 150k of 2.2M S1 sampled against the **full** S2/S3 index, ~93% of the S2/S3 records a sampled entity competes with have their true owner missing. Competition features (reverse rank, assignment) and the threshold are learned in a world with far fewer rival claimants than test. | E06: train on geo-cluster samples (whole localities) vs random; compare OOF on a fully blocked locality slice. | If the random-sample threshold/decision differs by more than 0.005 F0.5 on the full slice → switch to geo-cluster sampling. |
 | **2** | "A global score threshold is the right decision rule." | Simple, tuned on OOF. | The metric is per-entity macro F0.5. The best cut depends on how many strong candidates an entity has. Singletons need P(no match) reasoning. | E08: expected-F0.5 per entity vs global threshold, same OOF scores. | If expected-F doesn't beat global by ≥0.003 → keep global (simpler). |
-| **3** | "Blocking is not the bottleneck (ceiling 0.99)." | Measured global recall 0.95 @K30. | Measured on a 60/40 US/India mix, but test is 38/47/15. If the misses sit in India/Indic-script records, test recall is lower than the train sample shows. The ceiling formula also assumes a perfect matcher. | E03: recall ceiling split by country × script × domain-name × empty-address. | If India recall is < 0.93 → translit + address pass become P0. |
+| **3** | "Blocking is not the bottleneck (ceiling 0.99)." | Measured global recall 0.95 @K30. | Measured on a 60/40 US/India mix, but test is 38/47/15. If the misses sit in India/Indic-script records, test recall is lower than the train sample shows. The ceiling formula also assumes a perfect matcher. | E03: recall ceiling split by country × script × domain-name × empty-address. | **FIRED (run 002): India 0.9132 < 0.93.** Translit + address pass are P0. But see the verdict below — the hypothesis survives. |
 | **4** | "Features learned on US/India transfer to France." | Features are similarities, not vocabulary. | Normalizer rules for FR are untested; `r`→`rue` is excluded; departments vs regions; `bis`. | E10 leave-one-country-out; E11 FR normalizer unit tests on real test France rows; mlguard drift on France predicted cardinality. | France predicted links/entity outside 0.6–1.4× OOF → FR normalization is broken. |
 | 5 | "Word-token TF-IDF is enough for blocking." | 99.985% share a token. | Share ≠ rank in top-K; generic tokens pruned by max_df; Indic scripts. | E02, E03. | — |
 | 6 | "Train and test candidate distributions match." | Same generator. | Test is India-heavy (denser posting lists) → more candidates per entity pass K → rank features shift. | Compare rank/gap feature distributions train vs test (mlguard drift on features, E13). | KS statistic > 0.1 on a top feature. |
 
 Hypotheses 1–3 get fixed before any model tuning.
+
+### Verdict on hypothesis 3 (E03 / run 002, 2026-09-25)
+
+Equal 15k-per-country sample against the full 10.3M index. Full entry in
+[`../EXPERIMENTS.md`](../EXPERIMENTS.md) run 002.
+
+| K | India | US | ALL |
+|---:|---:|---:|---:|
+| 10 | 0.8720 | 0.9511 | 0.9116 |
+| 20 | 0.9007 | 0.9686 | 0.9347 |
+| 30 | 0.9132 | 0.9735 | 0.9434 |
+
+**The kill criterion fired.** India is 0.9132 at K=30, below the 0.93 line, and
+lags US by 6pp. The concern was well founded: the 60/40 sample did mask it.
+
+**But the hypothesis itself survives**, for a reason the criterion did not
+anticipate. Blocking is *unsupervised* — the vocabulary is fit on the corpus,
+not learned from labels — so France's absence from training costs it nothing,
+and French names are Latin with accents the normalizer already folds. France
+should track US, not India. Weighting the measured recalls by the real test
+mix:
+
+```
+0.383(0.9735) + 0.468(0.9132) + 0.150(~0.97) ≈ 0.9457
+F0.5 ceiling: 0.9896 (run 001)  ->  0.9887 (test-weighted)
+```
+
+A **0.001** move. `TOP_K = 30` stands and blocking is still not the bottleneck.
+
+**E03's own success bar — "a slice holding > 40% of misses" — was not met by
+any actionable slice.** Empty address 24.9%, all Indic combined 26.8%, domain
+10.9%; latin is 60.7%. The loss is distributed. What makes the first three
+worth fixing is *enrichment* against a covered baseline (7.8× / 3.6× / 2.4×),
+not their share.
+
+**Size of the prize.** If all three fixes landed perfectly and without overlap:
++1.41pp (address) +1.52pp (Indic) +0.62pp (domain) → ~0.97 recall → ceiling
+0.9939, against 0.9887 today. **+0.005 total.**
+
+So translit + address pass are P0 *within blocking*, as the criterion says —
+but the whole blocking backlog is capped at half a point of ceiling while the
+matcher remains unmeasured. Order of work: get a real OOF F0.5 first, then
+revisit these if the matcher's own per-country breakdown shows India dragging.
+
+One correction to the B1 guess: the guess named Indic-script and domain-name
+records. **Empty address is the strongest single signal of the three** (7.8×
+vs 3.6×), and it is a design flaw rather than a data property — `_blob` is
+`core_name + " " + core_address`, so a record with no address contributes only
+its name, carries fewer rare tokens, and loses top-K slots to records matching
+on address noise. ~3% of S2/S3 lack an address; they are a quarter of misses.
 
 ---
 

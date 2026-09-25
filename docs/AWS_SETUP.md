@@ -160,40 +160,21 @@ Check Service Quotas → **Quota request history**.
 
 ---
 
-## F. Shared bucket — team leader only (~5 min)
+## F. Shared bucket — done
 
-Requires everyone's 12-digit account ID from step C3.
+**Superseded.** The bucket exists: `amazon-cuda-commandos-2026` in `ap-south-1`,
+cross-account, every member granted read+write.
 
-```bash
-cd /c/Users/Priyanshu/OneDrive/Desktop/All_projects/amazon_ml_challenge
-bash aws/01_create_bucket.sh <team-name> ap-south-1
-```
-
-Then edit `aws/02_bucket_policy.json`:
-- replace all three `TEAMMATE_ACCOUNT_ID_*` with real 12-digit IDs (delete unused lines)
-- replace both `hackathon-CHANGEME` strings with the real bucket name
-
-Apply it:
+Setup, auth and the helper script are in
+[`TEAM_BUCKET.md`](TEAM_BUCKET.md). Short version:
 
 ```bash
-aws s3api put-bucket-policy \
-  --bucket hackathon-<team-name> \
-  --policy file://aws/02_bucket_policy.json
+aws login --region ap-south-1 --profile amlc   # not a static access key
+./aws/s3.sh ls
 ```
 
-Test from a **teammate's** machine before you rely on it:
-
-```bash
-aws s3 ls s3://hackathon-<team-name>/
-```
-
-If that 403s and you don't want to debug IAM at 3am, use the presigned-URL fallback:
-
-```bash
-aws s3 presign s3://hackathon-<team-name>/models/model.tar.gz --expires-in 86400
-```
-
-Also update `src/config.py`: set `TEAM_BUCKET` to the real name.
+The four `aws/0*.sh` scripts this section used to describe were written for a
+bucket we ended up not creating ourselves; `aws/s3.sh` replaced them.
 
 ---
 

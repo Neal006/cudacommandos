@@ -1,7 +1,12 @@
 # Master Plan — Business Entity Resolution (Amazon ML Challenge 2026)
 
-Branch `Master-Plan`, cut from `pipeline/entity-resolution`. It keeps Priyanshu's
-working pipeline and adds the plan, the analysis, and the `mlguard` trust checker.
+**Merged to `main` on 2026-09-25.** This is the team's plan of record — the
+working pipeline, the analysis, and the `mlguard` trust checker now live
+together on `main`, and that is where work continues.
+
+Findings from executed experiments are folded back into these documents as
+they land; [`../EXPERIMENTS.md`](../EXPERIMENTS.md) is the append-only run log
+and the source of truth for any number quoted here.
 
 | Doc | What it answers |
 |---|---|
