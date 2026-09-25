@@ -19,3 +19,6 @@ output/*.tsv
 *.pem
 .env
 .claude/settings.local.json
+
+# run logs are machine-local noise
+logs/
