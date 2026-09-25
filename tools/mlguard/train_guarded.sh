@@ -10,12 +10,25 @@ DIR="runs/$RUN"; mkdir -p "$DIR"; rm -f "$DIR/MLGUARD_STOP"
 cargo build --release -q --manifest-path tools/mlguard/Cargo.toml
 MLG=tools/mlguard/target/release/mlguard
 
+# Prefer the repo venv. A bare `python` picks up the system interpreter,
+# which on this box is pandas 3.x -- the version requirements.txt pins
+# against -- and has none of the v2 deps, so the run dies in an import or,
+# worse, on a pandas 3 behaviour change. Override with PYTHON=...
+PY=${PYTHON:-}
+if [ -z "$PY" ]; then
+  for cand in .venv/Scripts/python.exe .venv/bin/python; do
+    [ -x "$cand" ] && { PY="$cand"; break; }
+  done
+fi
+PY=${PY:-python}
+echo "interpreter: $PY ($("$PY" -c 'import pandas,sys;print("py",sys.version.split()[0],"pandas",pandas.__version__)'))"
+
 export MLGUARD_RUN_DIR="$DIR"
 "$MLG" watch "$DIR/metrics.jsonl" > "$DIR/mlguard_watch.log" 2>&1 &
 WATCH=$!
 
 set +e
-python "${PIPELINE:-src/run_pipeline.py}" "$@" 2>&1 | tee "$DIR/pipeline.log"
+"$PY" "${PIPELINE:-src/run_pipeline.py}" "$@" 2>&1 | tee "$DIR/pipeline.log"
 RC=${PIPESTATUS[0]}
 set -e
 # a crashed run never writes the end event; write it so the watcher exits
