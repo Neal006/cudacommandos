@@ -24,3 +24,4 @@ output/*.tsv
 tools/mlguard/target/
 runs/*/MLGUARD_STOP
 runs/adhoc/
+!tools/mlguard/fixtures/**/*.tsv
