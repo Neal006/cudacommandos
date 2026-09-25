@@ -22,3 +22,13 @@ output/*.tsv
 
 # run logs are machine-local noise
 logs/
+
+# mlguard build output and scratch run artefacts
+tools/mlguard/target/
+runs/*/MLGUARD_STOP
+runs/adhoc/
+
+# mlguard's fixtures are tiny hand-written TSVs the checker tests against, so
+# they have to survive the blanket *.tsv rule above. Keep this negation last —
+# gitignore takes the last matching pattern.
+!tools/mlguard/fixtures/**/*.tsv
