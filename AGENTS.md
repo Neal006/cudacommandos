@@ -23,6 +23,11 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
 - nealstuff branch: v2 pipeline (src/run_v2.py) = lean ingest + threaded top-k blocking (same candidates) + vectorized features (same values, +11 new) + stage 2 + decision layer + optional GPU reranker, all logged to mlguard. run_pipeline.py untouched.
 - Not yet wired: the runlog hooks in run_pipeline.py (LLD §9) — run_v2.py has them.
 - 30k OOF (EXPERIMENTS 003–005): old 0.9266 → v2 stage 1 0.9490 → stage 2 0.9508 → decision 0.9512; +reranker stage 2 0.9600 UNVERIFIED (record-overlap leak audit pending, PR for Priyanshu).
+- 150k OOF (EXPERIMENTS 007, full sample, CPU only): stage 1 0.9500 -> stage 2 0.9526 -> decision 0.9532; India 0.9399 / US 0.9620; blocking recall 0.9498. Ahead of 30k at every stage.
+- Test phase run for the first time: blocking is ~57 min, not the 255 min EXPLAINER budgets (4.4x; throughput tracks index size). Candidate cache `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet` (52.0M pairs, 758 MB) and `stats_test_v1.pkl` are built -- share via `./aws/s3.sh share-cache`.
+- NO SUBMISSION YET: the 007 test phase deadlocked in split_stats' pool (fixed, c701d01). Caches survive, so a retry skips all blocking but still retrains stages 1-2 (~60 min; run_v2 has no resume).
+- Windows: pools are capped by `config.WORKERS` (4 on spawn, AMLC_WORKERS to override) or the run OOMs at pool startup; `train_guarded.sh` must use the venv (system python is pandas 3.x); `*.sh` pinned LF.
+- RTX 3050 was absent from the PCI bus (Code 45, torch.cuda False) this boot, so the reranker is unverified and unrunnable in practice -- CPU fallback turns its 11 min into ~4-7 h. Needs a reboot.
 
 ## Architecture
 TSV → L0 ingest (parquet) → L1 contract → L2 normalize (translit, skeleton, legal form, FR/IN/US tables) → L3 multi-pass blocking ∪ (A name+addr, B address, C translit, D reverse) → L4 candidates parquet → L5 stage-1 GBDT → stage-2 GBDT (competition/peer) → L6 calibrate → assign (partition) → expected-F0.5 per entity → L7 write + validate.

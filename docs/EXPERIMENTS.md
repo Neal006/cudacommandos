@@ -204,6 +204,95 @@ Read:
   summary.json → null (strict JSON).
 - Train/valid F@0.5 gap: stage 1 ≈ 0.03 (train F is in-sample), stage 2 ≈ 0.007–0.014; mlguard run PASS.
 
+---
+
+## 007 — first full-sample run (150k) and first test phase ever run
+2026-09-26 · Priyanshu (Claude) · branch `nealstuff` + Windows fixes
+Question: does v2 hold at the full training sample, and what does the test phase actually cost?
+Setup:    `PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh 007_v2_full --sample 150000`
+          (no `--train-only`), laptop 10 cores / 23.7 GB, **CPU only — the RTX 3050 was absent from
+          the PCI bus this boot (Code 45), so no reranker.** GroupKFold(5) by S1, K=30.
+
+| Layer (OOF macro F_0.5) | 30k (004) | **150k (007)** |
+|---|---:|---:|
+| stage 1: v2 features | 0.9490 | **0.9500** |
+| stage 2: + competition / peer context | 0.9508 | **0.9526** |
+| decision layer | 0.9512 | **0.9532** |
+
+Per country: India 0.9399, US 0.9620 (30k: 0.9369 / 0.9606). Blocking recall 0.9498 on 4,499,993
+pairs from 150,000 entities, 492,739 positives. Predicted singletons 6.28% vs 5.63% true;
+3.138 links/entity against a true average of 3.46.
+
+Blocking recall is flat across sample size — 0.9506 at 2k, 0.9496 at 30k, 0.9498 at 150k — so the
+~0.95 ceiling is a property of the blocking design, not a small-sample artifact.
+
+### Test phase timings — the estimate this project was planned around is wrong
+
+First time the test phase has been run on any machine. Blocking, 1,732,544 S1 queries:
+
+| Partition | Queries | Index | Rate | Wall |
+|---|---:|---:|---:|---:|
+| France | 259,452 | 1,434,993 | ~1,010 q/s | 4.1 min |
+| India | 809,986 | 4,717,565 | 397 q/s | 34.0 min |
+| US | 663,106 | 3,817,031 | ~800 q/s | 13.8 min |
+| | | | **total** | **51.9 min** (+~5 min index builds) |
+
+`EXPLAINER.md` §"Full run on the laptop" budgets **255 min** for this stage, 62% of a 414-min run.
+Measured: **~57 min**, a 4.4x speedup — more than the 2.7x `sparse_dot_topn` was credited with,
+because the gain grows as the per-country index shrinks. Throughput tracks index SIZE, not query
+count: France's 1.4M-record index runs 2.5x the rate of India's 4.7M.
+
+That kills the case for renting hardware (§"Where to run it"). The laptop is the right box.
+
+Also: test US index is 3.82M records vs train's 6.19M, while test India is 4.72M vs train's 4.13M —
+the documented country shift, visible in the index sizes.
+
+Cached and worth sharing (`./aws/s3.sh share-cache`): `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet`,
+**51,974,499 pairs / 758 MB**, plus `stats_test_v1.pkl` (153 MB, 63 s).
+
+### Two conclusions from 003-005 that do not survive at full sample
+
+- **"Every decision mode is within 0.0005 ... assignment adds ~nothing"** — not at 150k. The best mode
+  is `assign='soft'` + `select='expected_f'` with `miss=0.1`, not the global threshold that won at 30k.
+  The gain is small (+0.0006 over stage 2) but the *choice* is sample-size dependent, so the decision
+  layer is doing real work where it looked inert. Do not delete it on the 30k evidence.
+- **`loss_ratio` still fires.** 004 recorded it fixed to need a stalled valid loss; at 150k it tripped
+  anyway — `fold 20 iter 210: valid/train loss 1.53 > 1.5` — stopping stage-2 fold 0 and rolling back
+  to its best iteration. The guard behaved correctly; the threshold in `mlguard.toml` is tuned on 30k
+  and wants revisiting before it silently truncates full-sample folds.
+
+Train/valid gaps shrink with sample, as expected: stage 1 0.004-0.017 and stage 2 0.001-0.003 at 150k,
+against 0.007-0.014 at 30k and 0.043 at 2k (which mlguard correctly FAILed on `overfit_gap`).
+Stage 1 fold 1 hit `best_iter 2000` = `MAX_ROUNDS` without early-stopping, so that fold was still
+improving when the cap cut it off — worth raising MAX_ROUNDS for full-sample runs.
+
+### No submission yet: the run hung in the test phase
+
+After blocking finished, the run deadlocked — 0% CPU, no children, 10.2 GB resident, silent.
+`split_stats` called `Pool(workers)` unconditionally (unlike `record_table` beside it, which guards on
+`workers > 1`). On the test split it runs with the 52M-pair frame resident, so the parent was at ~10 GB
+when it spawned; a worker died, the pool could not replace it (`PermissionError: [WinError 5]` from
+`DuplicateHandle`), and `pool.map` waited forever. It stalled rather than raised, which is the worse
+failure: 57 minutes of finished blocking sat on disk while the process held 10 GB doing nothing.
+Fixed in `c701d01`. Everything expensive was already cached, so the retry skips all blocking.
+
+### Windows portability — the branch could not start at all before this
+
+`nealstuff` had never run on a Windows box. Four fixes (`6a91330`, `8264b83`):
+- Pools sized `os.cpu_count() - 1` = 15 workers. Free under fork, fatal under spawn (each worker
+  re-imports pandas/polars/numpy/scipy, 250-400 MB). Died in MemoryError during pool startup and
+  orphaned the workers. Now `config.WORKERS`, capped at 4 on spawn, `AMLC_WORKERS` to override.
+- `_pick_data_dir` tested the drive letter, not the folder, so a mounted-but-empty `D:\amlc_data`
+  shadowed the real dataset and every path silently pointed at nothing.
+- `train_guarded.sh` ran a bare `python` — here the system 3.12 with pandas 3.0.3, the major version
+  requirements.txt pins against, and missing sparse_dot_topn and anyascii. It now prefers the venv and
+  prints which interpreter it chose.
+- That script was stored CRLF and `core.autocrlf=true` restores it, so bash choked on the `\r`.
+  `.gitattributes` pins `*.sh` to LF.
+
+New deps needed installing: polars, anyascii, sparse_dot_topn.
+
+
 Open questions worth an entry each:
 
 - **Per-country F_0.5.** France is 15% of test with zero training rows and the
