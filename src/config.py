@@ -125,3 +125,22 @@ N_FOLDS = 5
 # F_0.5 weights precision 2x over recall, so the decision threshold sits well
 # above 0.5. Tuned on out-of-fold predictions; this is only the starting point.
 DEFAULT_THRESHOLD = 0.70
+
+# --- team S3 bucket (cross-account; owned by another team member's account) ---
+AWS_REGION = "ap-south-1"
+AWS_PROFILE = os.environ.get("AWS_PROFILE", "amlc")
+TEAM_BUCKET = "amazon-cuda-commandos-2026"
+
+# Everyone writes under their own prefix so concurrent uploads cannot clobber
+# each other. Override per machine with AMLC_MEMBER.
+TEAM_MEMBER = os.environ.get("AMLC_MEMBER", "priyanshu")
+
+# The candidate cache is the artifact actually worth sharing: test blocking is
+# 4-5 hours of compute, and the parquet reproduces it exactly. One person runs
+# it, everyone else pulls the result.
+def s3_uri(*parts, member=None):
+    """s3://<bucket>/<member>/<parts...> — omit parts for the member's prefix."""
+    member = TEAM_MEMBER if member is None else member
+    tail = "/".join(str(p).strip("/") for p in parts if p)
+    base = f"s3://{TEAM_BUCKET}/{member}"
+    return f"{base}/{tail}" if tail else f"{base}/"
