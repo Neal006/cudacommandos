@@ -26,8 +26,6 @@ import data as D
 import features as F
 from normalize import add_feature_columns
 from metrics import macro_f_beta, scores_breakdown, blocking_recall
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
 
 T0 = time.time()
 
@@ -173,10 +171,8 @@ def main(blocking_only=False, sample=None):
         num_threads=0,
     )
 
-    oof = np.zeros(len(X))
-    oof_lgb = np.zeros(len(X))
-    oof_lr = np.zeros(len(X))
-    models, lr_models, scalers = [], [], []
+        oof = np.zeros(len(X))
+    models = []
 
     for fold, (tr, va) in enumerate(GroupKFold(n_splits=C.N_FOLDS).split(X, y, groups)):
         m = lgb.train(
@@ -184,24 +180,14 @@ def main(blocking_only=False, sample=None):
             valid_sets=[lgb.Dataset(X.iloc[va], y[va])],
             callbacks=[lgb.early_stopping(100, verbose=False)],
         )
-        oof_lgb[va] = m.predict(X.iloc[va], num_iteration=m.best_iteration)
+        oof[va] = m.predict(X.iloc[va], num_iteration=m.best_iteration)
         models.append(m)
-
-        scaler = StandardScaler().fit(X.iloc[tr])
-        lr = LogisticRegression(max_iter=1000, C=1.0)
-        lr.fit(scaler.transform(X.iloc[tr]), y[tr])
-        oof_lr[va] = lr.predict_proba(scaler.transform(X.iloc[va]))[:, 1]
-        lr_models.append(lr)
-        scalers.append(scaler)
 
         log(f"fold {fold} done (best_iter={m.best_iteration})")
 
-    oof = 0.5 * oof_lgb + 0.5 * oof_lr
-    log(f"LGB-only F0.5 check vs ensemble — compare after threshold tuning below")
-
     s1_ids = s1[C.ID].tolist()
     thr, cv = tune_threshold(truth, pairs, oof, s1_ids)
-    log(f"BEST THRESHOLD {thr:.2f} -> OOF macro F_0.5 = {cv:.4f}")
+    log(f"LGB-ONLY (ST features)  thr={thr:.2f}  OOF macro F_0.5={cv:.4f}")
 
     keep = pairs.assign(score=oof)
     keep = keep[keep["score"] >= thr]
@@ -228,10 +214,7 @@ def main(blocking_only=False, sample=None):
     log(f"test pairs: {len(t_pairs):,}")
     TX = featurize(t_pairs, "test")
     TX = TX.reindex(columns=models[0].feature_name(), fill_value=0.0)
-    lgb_scores = np.mean([m.predict(TX, num_iteration=m.best_iteration) for m in models], axis=0)
-    lr_scores = np.mean([lr.predict_proba(sc.transform(TX))[:, 1]
-                          for lr, sc in zip(lr_models, scalers)], axis=0)
-    scores = 0.5 * lgb_scores + 0.5 * lr_scores
+    scores = np.mean([m.predict(TX, num_iteration=m.best_iteration) for m in models], axis=0)
 
     sel = t_pairs.assign(score=scores)
     sel = sel[sel["score"] >= thr]
