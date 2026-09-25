@@ -93,7 +93,82 @@ exists, nothing about feature quality is known.
 
 ---
 
-## 002 — (next)
+## 002 — Where blocking recall leaks (country × script)
+2026-09-25 · Priyanshu · `2cd608a`
+
+**Question.** Run 001's ceiling came from a random 150k sample, which inherits
+train's 60/40 US/India mix. Test is 38/47/15 US/India/France. Neal's
+weakest-hypothesis audit (Master-Plan, E03) argues that if the misses
+concentrate in India — or in non-Latin-script records, which the normalizer
+folds accents on but does not transliterate — the headline is optimistic.
+
+**Setup.** `src/analyze_blocking.py --per-country 15000`. Equal sample per
+country so neither can hide inside the other; full 10.3M index; same blocking
+parameters as run 001. ~8.5 min.
+
+**Result.**
+
+| K | India | US | ALL |
+|---:|---:|---:|---:|
+| 10 | 0.8720 | 0.9511 | 0.9116 |
+| 20 | 0.9007 | 0.9686 | 0.9347 |
+| 30 | 0.9132 | 0.9735 | 0.9434 |
+
+5,866 missed of 103,567 true pairs. Missed targets vs a covered baseline:
+
+| Property | missed | covered | enrichment |
+|---|---:|---:|---:|
+| **empty address** | **24.9%** | **3.2%** | **7.8×** |
+| kannada | 3.1% | 0.6% | 5.2× |
+| devanagari | 16.5% | 4.3% | 3.8× |
+| all Indic combined | 26.8% | 7.5% | 3.6× |
+| domain-style name | 10.9% | 4.5% | 2.4× |
+| latin | 60.7% | 87.5% | 0.69× |
+
+**Read.**
+
+**E03 confirmed: India lags US by 6pp at K=30** (0.9132 vs 0.9735), below the
+0.93 line that was supposed to make transliteration P0.
+
+**But the test-set impact is small.** Blocking is unsupervised — the vocabulary
+is fit on the corpus, not learned from labels — so France's absence from
+training does not hurt it, and French names are Latin with accents the
+normalizer already folds. France should track US. Weighting by the real test
+mix: `0.383(0.9735) + 0.468(0.9132) + 0.150(~0.97) ≈ 0.946`, against 0.9499
+measured in run 001. **F_0.5 ceiling 0.990 → 0.989. TOP_K=30 stands.**
+
+**The unpredicted finding: empty address, not script, is the strongest single
+signal** (7.8× vs 3.6× for all Indic combined). That is a design bug, not a
+data property — `_blob` is `core_name + " " + core_address`, so a record
+without an address contributes only its name, carries fewer rare tokens, and
+loses top-K slots to records matching on address noise. Roughly 3% of S2/S3
+records have a blank address; they are a quarter of all misses.
+
+Keep it in proportion: latin is still **60.7% of misses in absolute terms**.
+The majority of missed pairs are ordinary records that did not rank top-30 —
+hard pairs, not a category failure.
+
+**Ceiling arithmetic for the candidate fixes**, if each were perfect and
+non-overlapping: empty-address +1.41pp recall, Indic +1.52pp, domain +0.62pp.
+Fixing all three lands around 0.97 recall → F_0.5 ceiling 0.9939, against
+0.9887 test-weighted today: **+0.005 over doing nothing.** That is the honest
+size of the prize.
+
+Per-slice ceilings, for when the matcher is measured by country:
+
+```
+India  recall 0.9132 -> F_0.5 ceiling 0.9813
+US     recall 0.9735 -> F_0.5 ceiling 0.9946
+```
+
+**Next.** The ceiling says blocking is still not the bottleneck, and no
+blocking fix can be worth more than ~0.005 while the matcher is unmeasured.
+Train it and get a real OOF F_0.5 first; revisit these three fixes only if the
+per-country breakdown of the *matcher* shows India dragging.
+
+---
+
+## 003 — (next)
 
 Not yet run. The full pipeline (`src/run_pipeline.py`, no flag) is ~6–7 hours
 end to end, dominated by test blocking. It produces the first real OOF F_0.5
