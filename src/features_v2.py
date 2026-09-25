@@ -104,9 +104,24 @@ def split_stats(s1_path, workers=_WORKERS) -> dict:
     names, addrs = df[C.NAME].to_list(), df[C.ADDR].to_list()
     jobs = [names[i:i + _REC_CHUNK] for i in range(0, len(names), _REC_CHUNK)]
     ajobs = [addrs[i:i + _REC_CHUNK] for i in range(0, len(addrs), _REC_CHUNK)]
-    with Pool(workers) as pool:
-        cores = [c for p in pool.map(_cores, jobs) for c in p]
-        caddr = [c for p in pool.map(_caddrs, ajobs) for c in p]
+    # The slices above own their strings now; dropping these frees the
+    # originals before any worker is spawned, which matters because a spawn
+    # worker is a whole new interpreter.
+    del names, addrs
+    # Guard the pool the way record_table already does. Called on the test
+    # split, this runs with the 52M-pair candidate frame still resident: the
+    # parent was at 10 GB, a worker died, and the pool could not respawn it
+    # ("PermissionError: [WinError 5]" out of DuplicateHandle). pool.map then
+    # waited forever on results that were never coming -- the run sat at 0%
+    # CPU holding 10 GB rather than failing. Serial is the safe path here,
+    # and the result is cached to interim/ so it is paid once per split.
+    if len(jobs) > 1 and workers > 1:
+        with Pool(workers) as pool:
+            cores = [c for p in pool.map(_cores, jobs) for c in p]
+            caddr = [c for p in pool.map(_caddrs, ajobs) for c in p]
+    else:
+        cores = [c for j in jobs for c in _cores(j)]
+        caddr = [c for j in ajobs for c in _caddrs(j)]
     n = len(cores)
     tok_df = pd.Series([t for c in cores for t in set(c.split())]).value_counts()
     return {
