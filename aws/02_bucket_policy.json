@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TeammateReadAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::TEAMMATE_ACCOUNT_ID_1:root",
+          "arn:aws:iam::TEAMMATE_ACCOUNT_ID_2:root",
+          "arn:aws:iam::TEAMMATE_ACCOUNT_ID_3:root"
+        ]
+      },
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::hackathon-CHANGEME",
+        "arn:aws:s3:::hackathon-CHANGEME/*"
+      ]
+    }
+  ]
+}

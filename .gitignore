@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Dataset lives outside the repo (~2.4 GB) — see README. These are a safety net.
+data/
+dataset/
+*.tsv
+*.tsv.zip
+*.parquet
+
+# Pipeline outputs: matching_results.tsv for the full test set is ~100 MB.
+output/*.tsv
+*.npy
+*.pkl
+
+# never commit credentials
+.aws-credentials
+*.pem
+.env
+.claude/settings.local.json
