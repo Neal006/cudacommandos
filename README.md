@@ -11,6 +11,7 @@ Source 3. An entity may match zero, one, or many.
 
 | Doc | What's in it |
 |---|---|
+| **[`docs/EXPLAINER.md`](docs/EXPLAINER.md)** | **Start here if you're new.** The whole thing in plain language: problem, metric, approach, what we measured, and how long training takes where |
 | **[`docs/master-plan/`](docs/master-plan/README.md)** | **The plan of record.** Analysis, HLD/LLD, system architecture, experiment plan E01–E18, edge cases, leakage map, model selection |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Append-only run log — **record every leaderboard submission here** |
 | [`docs/DATA_BRIEF.md`](docs/DATA_BRIEF.md) | Measured stats, the train/test country shift, what the scale forces |
