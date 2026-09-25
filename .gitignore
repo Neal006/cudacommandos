@@ -19,3 +19,8 @@ output/*.tsv
 *.pem
 .env
 .claude/settings.local.json
+
+# mlguard build output and scratch run artefacts
+tools/mlguard/target/
+runs/*/MLGUARD_STOP
+runs/adhoc/
