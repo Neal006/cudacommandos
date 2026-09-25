@@ -26,6 +26,8 @@ import data as D
 import features as F
 from normalize import add_feature_columns
 from metrics import macro_f_beta, scores_breakdown, blocking_recall
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 T0 = time.time()
 
@@ -98,6 +100,8 @@ def featurize(pairs, which):
         ignore_index=True,
     ))
     feat = F.build_pair_features(pairs, s1f, otf)
+    emb = F.build_embedding_features(pairs, s1f, otf)
+    feat = pd.concat([feat, emb], axis=1)
     del s1f, otf
     gc.collect()
     return F.add_rank_features(feat, pairs, "core_token_sort")
@@ -170,17 +174,30 @@ def main(blocking_only=False, sample=None):
     )
 
     oof = np.zeros(len(X))
-    models = []
-    # Group by Source-1 entity so an entity's pairs never straddle folds.
+    oof_lgb = np.zeros(len(X))
+    oof_lr = np.zeros(len(X))
+    models, lr_models, scalers = [], [], []
+
     for fold, (tr, va) in enumerate(GroupKFold(n_splits=C.N_FOLDS).split(X, y, groups)):
         m = lgb.train(
             params, lgb.Dataset(X.iloc[tr], y[tr]), num_boost_round=2000,
             valid_sets=[lgb.Dataset(X.iloc[va], y[va])],
             callbacks=[lgb.early_stopping(100, verbose=False)],
         )
-        oof[va] = m.predict(X.iloc[va], num_iteration=m.best_iteration)
+        oof_lgb[va] = m.predict(X.iloc[va], num_iteration=m.best_iteration)
         models.append(m)
+
+        scaler = StandardScaler().fit(X.iloc[tr])
+        lr = LogisticRegression(max_iter=1000, C=1.0)
+        lr.fit(scaler.transform(X.iloc[tr]), y[tr])
+        oof_lr[va] = lr.predict_proba(scaler.transform(X.iloc[va]))[:, 1]
+        lr_models.append(lr)
+        scalers.append(scaler)
+
         log(f"fold {fold} done (best_iter={m.best_iteration})")
+
+    oof = 0.5 * oof_lgb + 0.5 * oof_lr
+    log(f"LGB-only F0.5 check vs ensemble — compare after threshold tuning below")
 
     s1_ids = s1[C.ID].tolist()
     thr, cv = tune_threshold(truth, pairs, oof, s1_ids)
@@ -211,7 +228,10 @@ def main(blocking_only=False, sample=None):
     log(f"test pairs: {len(t_pairs):,}")
     TX = featurize(t_pairs, "test")
     TX = TX.reindex(columns=models[0].feature_name(), fill_value=0.0)
-    scores = np.mean([m.predict(TX, num_iteration=m.best_iteration) for m in models], axis=0)
+    lgb_scores = np.mean([m.predict(TX, num_iteration=m.best_iteration) for m in models], axis=0)
+    lr_scores = np.mean([lr.predict_proba(sc.transform(TX))[:, 1]
+                          for lr, sc in zip(lr_models, scalers)], axis=0)
+    scores = 0.5 * lgb_scores + 0.5 * lr_scores
 
     sel = t_pairs.assign(score=scores)
     sel = sel[sel["score"] >= thr]
