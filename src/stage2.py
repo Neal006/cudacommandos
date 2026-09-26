@@ -30,22 +30,62 @@ def _quick_sim(R, a_idx, b_idx):
     return (n + a) / 200.0
 
 
-def build(pairs: pd.DataFrame, p1: np.ndarray, R: pd.DataFrame) -> pd.DataFrame:
-    """pairs: [s1_id, cand_id] aligned with p1; R: features_v2.record_table of candidates."""
+# The four competition columns are the only ones in build() that group by
+# cand_id. Everything else groups by s1_id, or compares a candidate with the
+# top two of its OWN entity -- all of which stay correct inside a chunk that
+# never splits an entity. These four do not: one candidate record can be
+# claimed by Source-1 entities that land in different chunks, so computing
+# them per chunk would silently give different values than training saw.
+CLAIM_COLS = ("claim_rank", "claim_gap", "n_claims", "n_strong_claims")
+
+
+def build_claims(pairs: pd.DataFrame, p1: np.ndarray) -> pd.DataFrame:
+    """The cand_id-grouped columns of build(), over the WHOLE frame.
+
+    Split out so the test path can compute them once globally and then build
+    the rest chunk by chunk. Needs no record table, which is the point: R for
+    all 9.4M test candidates is ~8 GB of Python strings, and this lets the
+    global pass avoid it entirely.
+    """
+    p1 = np.asarray(p1, dtype=np.float64)
+    d = pd.DataFrame({"cand_id": pairs["cand_id"].to_numpy(), "p1": p1})
+    gc_ = d.groupby("cand_id", sort=False)["p1"]
+    f = pd.DataFrame(index=d.index)
+    f["claim_rank"] = gc_.rank(ascending=False, method="min")
+    f["claim_gap"] = gc_.transform("max") - d["p1"]
+    f["n_claims"] = gc_.transform("size")
+    f["n_strong_claims"] = (d["p1"] >= STRONG).groupby(d["cand_id"]).transform("sum")
+    return f
+
+
+def build(pairs: pd.DataFrame, p1: np.ndarray, R: pd.DataFrame,
+          claims: pd.DataFrame | None = None) -> pd.DataFrame:
+    """pairs: [s1_id, cand_id] aligned with p1; R: features_v2.record_table of candidates.
+
+    `claims`: precomputed CLAIM_COLS for exactly these rows, from build_claims()
+    over the full frame. Pass it when `pairs` is a chunk; leave it None and the
+    columns are computed here, which is correct only when `pairs` is everything.
+    """
     d = pd.DataFrame({"s1_id": pairs["s1_id"].to_numpy(), "cand_id": pairs["cand_id"].to_numpy(),
                       "p1": np.asarray(p1, dtype=np.float64)})
     ge = d.groupby("s1_id", sort=False)["p1"]
-    gc = d.groupby("cand_id", sort=False)["p1"]
     f = pd.DataFrame(index=d.index)
     f["p1"] = d["p1"]
     f["p1_rank"] = ge.rank(ascending=False, method="first")
     f["p1_gap"] = ge.transform("max") - d["p1"]
     f["n_strong"] = (d["p1"] >= STRONG).groupby(d["s1_id"]).transform("sum")
     f["sum_p1"] = ge.transform("sum")
-    f["claim_rank"] = gc.rank(ascending=False, method="min")
-    f["claim_gap"] = gc.transform("max") - d["p1"]
-    f["n_claims"] = gc.transform("size")
-    f["n_strong_claims"] = (d["p1"] >= STRONG).groupby(d["cand_id"]).transform("sum")
+    if claims is None:
+        gc_ = d.groupby("cand_id", sort=False)["p1"]
+        f["claim_rank"] = gc_.rank(ascending=False, method="min")
+        f["claim_gap"] = gc_.transform("max") - d["p1"]
+        f["n_claims"] = gc_.transform("size")
+        f["n_strong_claims"] = (d["p1"] >= STRONG).groupby(d["cand_id"]).transform("sum")
+    else:
+        if len(claims) != len(d):
+            raise ValueError(f"claims has {len(claims)} rows, pairs has {len(d)}")
+        for c in CLAIM_COLS:
+            f[c] = np.asarray(claims[c], dtype=np.float64)
 
     # one sort gives every per-entity order statistic without per-group Python
     ri = R.index.get_indexer(d["cand_id"].astype(str))

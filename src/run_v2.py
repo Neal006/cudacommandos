@@ -101,39 +101,57 @@ def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibra
 
     Features are rebuilt in pass 2 rather than cached: 52M x 46 float64 is
     19 GB on disk and the rebuild costs less than that write plus read.
+
+    The candidate record table is built per chunk too. record_table() over all
+    9.37M test candidates is 17 string columns of Python objects, ~8 GB, and
+    it peaks higher still through the list-of-tuples it is assembled from.
+    Instead the raw source rows stay in polars (Arrow, ~1.2 GB for 10M rows)
+    and each chunk materializes only the records it needs, then frees them.
     """
+    import polars as pl
+    from ingest import read_polars
+
     p1p, p2p, p3p = D.source_paths("test")
     L = F2.record_table(F2.load_records([p1p], set(t_pairs["s1_id"])))
-    R = F2.record_table(F2.load_records([p2p, p3p], set(t_pairs["cand_id"])))
+    src = pl.concat([read_polars(p2p), read_polars(p3p)])
     bounds = _entity_chunks(t_pairs, chunk)
-    log(f"test scoring in {len(bounds)} entity-aligned chunks of ~{chunk:,} pairs")
+    log(f"test scoring in {len(bounds)} entity-aligned chunks of ~{chunk:,} pairs "
+        f"(L {len(L):,} records, source pool {len(src):,})")
 
-    def feats(sl):
+    def chunk_records(sl):
+        ids = pl.Series(sl["cand_id"].unique(), dtype=pl.String)
+        return F2.record_table(src.filter(pl.col(C.ID).is_in(ids.implode())).to_pandas())
+
+    def feats(sl, R):
         X = F2.build_pair_features(sl, L, R, stats=stats, extra=True)
         return F.add_rank_features(X, sl, "core_token_sort")
 
     p = np.empty(len(t_pairs), dtype=np.float64)
     for n, (lo, hi) in enumerate(bounds, 1):
         sl = t_pairs.iloc[lo:hi]
-        X = feats(sl)
+        R = chunk_records(sl)
+        X = feats(sl, R)
         p[lo:hi] = predict(models1, X[feat1].to_numpy())
-        del X
+        del X, R
         gc.collect()
         log(f"  stage-1 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
 
     if models2 is not None:
-        # float32 halves this: 14 columns x 52M is 5.8 GB in float64.
-        S2f = S2.build(t_pairs, p, R).astype(np.float32)
-        log(f"stage-2 features built globally: {S2f.shape}")
+        # Only the four cand_id-grouped columns have to see the whole frame,
+        # and they need no record table. float32: 4 x 52M is 0.8 GB, not 1.7.
+        claims = S2.build_claims(t_pairs, p).astype(np.float32)
+        log(f"stage-2 claim features built globally: {claims.shape}")
         for n, (lo, hi) in enumerate(bounds, 1):
             sl = t_pairs.iloc[lo:hi]
-            X2 = pd.concat([feats(sl).reset_index(drop=True),
-                            S2f.iloc[lo:hi].reset_index(drop=True)], axis=1)
+            R = chunk_records(sl)
+            S2f = S2.build(sl, p[lo:hi], R, claims=claims.iloc[lo:hi])
+            X2 = pd.concat([feats(sl, R).reset_index(drop=True),
+                            S2f.reset_index(drop=True)], axis=1)
             p[lo:hi] = predict(models2, X2[feat2].to_numpy())
-            del X2
+            del X2, S2f, R
             gc.collect()
             log(f"  stage-2 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
-        del S2f
+        del claims
         gc.collect()
 
     return calibrator.predict(p)
@@ -203,7 +221,7 @@ def main(a):
 
     # ---------------- train: candidates, labels, features
     s1, s2, s3 = ingest.load_split_lean("train", sample=a.sample)
-    cands, pairs = cached_candidates(s1, s2, s3, "train", a.sample)
+    _, pairs = cached_candidates(s1, s2, s3, "train", a.sample, frame_only=True)
     s1_ids = s1[C.ID].astype(str).tolist()
     country = pd.Series(s1[C.COUNTRY].astype(str).to_numpy(), index=s1_ids)
     del s2, s3, s1
@@ -304,7 +322,7 @@ def main(a):
     t1_, t2_, t3_ = ingest.load_split_lean("test")
     test_ids = t1_[C.ID].astype(str).tolist()
     t_country = pd.Series(t1_[C.COUNTRY].astype(str).to_numpy(), index=test_ids)
-    t_cands, t_pairs = cached_candidates(t1_, t2_, t3_, "test", None)
+    _, t_pairs = cached_candidates(t1_, t2_, t3_, "test", None, frame_only=True)
     del t1_, t2_, t3_
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
@@ -323,10 +341,19 @@ def main(a):
                                  chunk=C.TEST_CHUNK_PAIRS)
     tdf = t_pairs[["s1_id", "cand_id"]].assign(p=p)
     tsel = decide.apply(tdf, best)
-    matches = tsel.groupby("s1_id")["cand_id"].apply(set).to_dict()
+    del tdf
+    gc.collect()
+    # cand_sets is 1.73M Python sets over 52M ids, ~3.5 GB. Build it while
+    # t_pairs is still needed, then drop the 5.3 GB frame before the much
+    # smaller `matches` and the two output DataFrames are built.
     cand_sets = t_pairs.groupby("s1_id")["cand_id"].apply(set).to_dict()
+    del t_pairs
+    gc.collect()
+    matches = tsel.groupby("s1_id")["cand_id"].apply(set).to_dict()
     out = D.write_outputs(test_ids, {s: matches.get(s, set()) for s in test_ids},
                           {s: cand_sets.get(s, set()) for s in test_ids})
+    del cand_sets, matches
+    gc.collect()
     sing, links, _, _ = rate_stats(tsel, test_ids, t_country)
     summary.update(test_pred_singleton_rate=sing, test_pred_links_per_entity=links)
     run.write_summary(**summary)
