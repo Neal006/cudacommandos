@@ -198,7 +198,7 @@ def _agree(inter, na, nb):
 
 # ------------------------------------------------------------------ main entry
 def build_pair_features(pairs: pd.DataFrame, L: pd.DataFrame, R: pd.DataFrame,
-                        stats: dict | None = None, extra: bool = True) -> pd.DataFrame:
+                        stats=None, extra: bool = True) -> pd.DataFrame:
     """pairs: [s1_id, cand_id, block_sim]; L/R: record_table() of S1 and S2+S3.
 
     extra=False returns exactly features.build_pair_features' columns.

@@ -59,7 +59,7 @@ def build_claims(pairs: pd.DataFrame, p1: np.ndarray) -> pd.DataFrame:
 
 
 def build(pairs: pd.DataFrame, p1: np.ndarray, R: pd.DataFrame,
-          claims: pd.DataFrame | None = None) -> pd.DataFrame:
+          claims=None) -> pd.DataFrame:
     """pairs: [s1_id, cand_id] aligned with p1; R: features_v2.record_table of candidates.
 
     `claims`: precomputed CLAIM_COLS for exactly these rows, from build_claims()

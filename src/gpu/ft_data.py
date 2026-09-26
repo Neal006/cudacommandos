@@ -177,7 +177,7 @@ def evaluate(model_dirs, pairs_path, band=(0.2, 0.8)):
     """Score every model dir (e5 or laya) on ONE frozen pair file, so options are compared on the same
     rows. Each model's own valid split is a different draw and is not comparable across runs."""
     from sklearn.metrics import log_loss, roc_auc_score
-    from gpu import reranker_module
+    from gpu import reranker
     d = load_pairs([pairs_path])
     y = d["y"].to_numpy()
     inb = ((d["p1"] >= band[0]) & (d["p1"] <= band[1])).to_numpy() if "p1" in d.columns else np.ones(len(d), bool)
