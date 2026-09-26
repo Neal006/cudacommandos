@@ -245,13 +245,14 @@ pub struct Watcher {
     fold: Option<u32>,
     evals: usize,
     prev: Option<(f64, f64)>,
+    best_valid: f64,
     rising: usize,
     tripped: bool,
 }
 
 impl Watcher {
     pub fn new(cfg: WatchCfg) -> Self {
-        Watcher { cfg, fold: None, evals: 0, prev: None, rising: 0, tripped: false }
+        Watcher { cfg, fold: None, evals: 0, prev: None, best_valid: f64::INFINITY, rising: 0, tripped: false }
     }
 
     pub fn feed(&mut self, t: &Tick) -> Option<Finding> {
@@ -260,6 +261,7 @@ impl Watcher {
             self.fold = Some(t.fold);
             self.evals = 0;
             self.prev = None;
+            self.best_valid = f64::INFINITY;
             self.rising = 0;
             self.tripped = false;
         }
@@ -285,8 +287,14 @@ impl Watcher {
                     t.fold, t.iter, self.rising)));
             }
         }
+        // A train/valid loss ratio alone is not overfitting: in boosting both losses head to
+        // zero and the ratio keeps growing while valid still improves (run 003 tripped at
+        // 0.035/0.022 = 1.5 with valid F0.5 still rising). Only flag it once valid has also
+        // stopped improving — memorization with no generalization gain.
+        let stalled = va > self.best_valid * 1.02;
+        self.best_valid = self.best_valid.min(va);
         if hit.is_none() && self.evals > self.cfg.warmup_evals && tr > 0.0
-            && va / tr > self.cfg.max_loss_ratio && !self.tripped
+            && va / tr > self.cfg.max_loss_ratio && stalled && !self.tripped
         {
             hit = Some(f(Level::Fail, "loss_ratio", format!(
                 "fold {} iter {}: valid/train loss {:.2} > {}", t.fold, t.iter, va / tr, self.cfg.max_loss_ratio)));
@@ -384,6 +392,16 @@ mod tests {
         let mut w = Watcher::new(cfg().watch);
         let x = w.feed(&Tick { fold: 1, iter: 0, train_loss: Some(f64::NAN), valid_loss: Some(0.5), event: None });
         assert_eq!(x.map(|x| x.rule), Some("nan_loss"));
+    }
+
+    #[test]
+    fn ratio_alone_is_not_overfitting() {
+        let mut w = Watcher::new(cfg().watch);
+        for i in 0..200u32 {
+            let tr = 0.3 / (1.0 + i as f64 * 0.2);      // -> 0.0075
+            let va = 0.03 + 0.3 / (1.0 + i as f64 * 0.1); // still improving, ratio grows past 4
+            assert!(w.feed(&Tick { fold: 0, iter: i, train_loss: Some(tr), valid_loss: Some(va), event: None }).is_none(), "iter {}", i);
+        }
     }
 
     #[test]

@@ -34,13 +34,18 @@ def log(msg):
     print(f"[{time.time() - T0:7.1f}s] {msg}", flush=True)
 
 
-def cached_candidates(s1, s2, s3, which, sample):
+def cached_candidates(s1, s2, s3, which, sample, frame_only=False):
     """Blocking, memoized to disk.
 
-    Test blocking is ~4-5 hours at measured throughput (India 75 q/s, US 150
-    q/s over a 10M index). Recomputing it on every matcher experiment would
-    make iteration impossible, so the flat candidate frame is written to
-    parquet and keyed on every parameter that changes the result.
+    Test blocking is ~52 min (run 007: France 1066 q/s over 1.43M records,
+    US 800 over 3.82M, India 397 over 4.72M). Recomputing it on every matcher
+    experiment would still make iteration painful, so the flat candidate frame
+    is written to parquet and keyed on every parameter that changes the result.
+
+    `frame_only=True` returns (None, frame) and skips rebuilding the dict form.
+    That rebuild is ~5 GB of Python objects on test -- 52M tuples, 52M float
+    objects and 1.73M lists -- and run_v2 never reads it. Ask for it only if
+    you actually want it.
     """
     key = (f"{which}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
            f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{sample or 'all'}")
@@ -54,7 +59,10 @@ def cached_candidates(s1, s2, s3, which, sample):
         frame = blocking.candidates_to_frame(cands)
         frame.to_parquet(path, index=False)
         log(f"cached candidates -> {path.name} ({len(frame):,} pairs)")
-        return cands, frame
+        return (None if frame_only else cands), frame
+
+    if frame_only:
+        return None, frame
 
     # rebuild the dict form, preserving the every-entity-gets-a-key invariant
     cands = {sid: [] for sid in s1[C.ID]}

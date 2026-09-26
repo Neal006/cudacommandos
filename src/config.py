@@ -22,8 +22,20 @@ def _pick_data_dir() -> Path:
     env = os.environ.get("AMLC_DATA_DIR")
     if env:
         return Path(env)
+    # Test the candidate FOLDER, not just its drive letter. Checking the
+    # drive root selects D:\amlc_data the moment anything is mounted as D:,
+    # even when the dataset is somewhere else entirely -- which is exactly
+    # what happened here: an external disk mounted as D:, an empty
+    # D:\amlc_data on it, and 2.4 GB of data sitting in the home fallback.
+    # Every path below then pointed at nothing, and the run failed several
+    # stages in, reading as a data problem rather than a path problem.
     for candidate in (Path(r"D:\amlc_data"), Path(r"E:\amlc_data")):
-        if candidate.drive and Path(candidate.drive + "\\").exists():
+        if (candidate / "dataset").is_dir():
+            return candidate
+    # Dataset is on neither removable drive: prefer one that is at least
+    # mounted and could receive it, otherwise the home fallback.
+    for candidate in (Path(r"D:\amlc_data"), Path(r"E:\amlc_data")):
+        if candidate.is_dir():
             return candidate
     return Path.home() / "amlc_data"
 
@@ -41,7 +53,11 @@ TEST_S1 = TEST_DIR / "test_source1.tsv"
 TEST_S2 = TEST_DIR / "test_source2.tsv"
 TEST_S3 = TEST_DIR / "test_source3.tsv"
 
-OUTPUT = ROOT / "output"
+# The repo lives in OneDrive, so a full test run's outputs land in a synced
+# folder on the system drive -- candidate_pairs.tsv alone is ~1 GB at 1.73M
+# entities x K=30. AMLC_OUTPUT_DIR moves them off it. The default is
+# unchanged, so nothing differs for anyone who does not set it.
+OUTPUT = Path(os.environ.get("AMLC_OUTPUT_DIR") or (ROOT / "output"))
 INTERIM = DATA_DIR / "interim"
 for _d in (OUTPUT, INTERIM):
     _d.mkdir(parents=True, exist_ok=True)
@@ -120,11 +136,47 @@ TRAIN_SAMPLE = 150_000
 # training. Nothing here may hard-code {US, India}.
 BLOCK_WITHIN_COUNTRY = True
 
+# Threads for sparse_dot_topn's top-k product (-1 = all cores but one). Results
+# are identical to the scipy path; only speed changes.
+BLOCK_THREADS = int(os.environ.get("AMLC_BLOCK_THREADS", "-1"))
+
+# Worker PROCESSES for the multiprocessing pools in ingest.py and
+# features_v2.py. This is not the same knob as BLOCK_THREADS, which is
+# threads inside one process and costs no extra memory.
+#
+# Windows and macOS start workers with `spawn`, so each one is a fresh
+# interpreter that re-imports pandas, polars, numpy, scipy and rapidfuzz
+# -- roughly 250-400 MB resident before it does any work. cpu_count() also
+# reports logical cores (16 here for 10 physical), so the old
+# `cpu_count() - 1` default asked for 15 of those and the pool died in
+# MemoryError during startup, before the first chunk was processed. Linux
+# forks instead and shares those pages, which is why the same default is
+# free there and fatal here.
+#
+# So: cap on spawn platforms, leave fork alone. Raise AMLC_WORKERS if the
+# box has RAM to spare -- peak is roughly workers x (400 MB + chunk).
+def _default_workers() -> int:
+    import multiprocessing
+    n = max(1, (os.cpu_count() or 2) - 1)
+    if multiprocessing.get_start_method(allow_none=False) == "spawn":
+        return min(n, 4)
+    return n
+
+
+WORKERS = int(os.environ.get("AMLC_WORKERS") or _default_workers())
+
 # --- matcher ---
 N_FOLDS = 5
 # F_0.5 weights precision 2x over recall, so the decision threshold sits well
 # above 0.5. Tuned on out-of-fold predictions; this is only the starting point.
 DEFAULT_THRESHOLD = 0.70
+
+# Pairs per chunk when scoring the test set. The unchunked path builds one
+# frame of 1.73M entities x K=30 = ~52M rows: 19 GB in float64, doubled by
+# stage 2's concat, against 23.7 GB of RAM on this box. Chunks are cut only
+# where s1_id changes, so every per-entity statistic matches the whole-frame
+# result. Lower it if the test phase still runs tight.
+TEST_CHUNK_PAIRS = int(os.environ.get("AMLC_TEST_CHUNK") or 4_000_000)
 
 # --- team S3 bucket (cross-account; owned by another team member's account) ---
 AWS_REGION = "ap-south-1"

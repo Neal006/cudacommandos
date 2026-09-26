@@ -1,0 +1,123 @@
+{
+  "run_id": "v2_20260926_0007",
+  "oof_score": 0.9512278091438816,
+  "threshold_source": "oof",
+  "folds": [
+    {
+      "fold": 20,
+      "best_iter": 174,
+      "max_iter": 2000,
+      "train_score": 0.9550342072176001,
+      "valid_score": 0.9450467842811264
+    },
+    {
+      "fold": 21,
+      "best_iter": 184,
+      "max_iter": 2000,
+      "train_score": 0.9512528616182426,
+      "valid_score": 0.9489722464739273
+    },
+    {
+      "fold": 22,
+      "best_iter": 175,
+      "max_iter": 2000,
+      "train_score": 0.9527122316350617,
+      "valid_score": 0.9505482125050676
+    },
+    {
+      "fold": 23,
+      "best_iter": 176,
+      "max_iter": 2000,
+      "train_score": 0.9522277645055328,
+      "valid_score": 0.9461387312933565
+    },
+    {
+      "fold": 24,
+      "best_iter": 169,
+      "max_iter": 2000,
+      "train_score": 0.9530497719749019,
+      "valid_score": 0.9489357082645843
+    }
+  ],
+  "blocking_recall": 0.9495967741935484,
+  "per_country": {
+    "India": 0.9368604200790532,
+    "US": 0.9606107877198315
+  },
+  "oof_pred_singleton_rate": 0.0654,
+  "true_singleton_rate": 0.058333333333333334,
+  "oof_pred_links_per_entity": 3.1250666666666667,
+  "feature_importance": {
+    "block_sim": 4587.007215261459,
+    "name_ratio": 2196.138195514679,
+    "name_token_sort": 2178.8087594509125,
+    "name_token_set": 1820.9644513130188,
+    "name_partial": 2535.9981393814087,
+    "core_ratio": 1717.9400870800018,
+    "core_token_sort": 887.618706703186,
+    "core_jw": 1381.0777769088745,
+    "core_jaccard": 389.13687205314636,
+    "core_containment": 234.6706304550171,
+    "core_first_tok_eq": 81.6701889038086,
+    "core_len_diff": 1465.9630289077759,
+    "core_tok_diff": 542.9613907337189,
+    "acronym_eq": 176.2125792503357,
+    "acronym_vs_core": 224.21007084846497,
+    "addr_ratio": 2624.171314239502,
+    "addr_token_sort": 2523.781742811203,
+    "addr_token_set": 2111.366368532181,
+    "addr_jaccard": 1709.8811416625977,
+    "addr_containment": 1199.8612966537476,
+    "addr_len_diff": 2784.380551815033,
+    "addr_num_agree": 516.8825852870941,
+    "addr_num_jaccard": 1216.134354352951,
+    "name_num_agree": 79.0858199596405,
+    "country_eq": 0.0,
+    "name_addr_mean": 17008.49466776848,
+    "name_addr_min": 1837.8713619709015,
+    "tl_tset": 1556.883184671402,
+    "tl_jw": 1808.1094779968262,
+    "skel_jw": 3055.169691801071,
+    "skel_eq": 0.0,
+    "either_native": 109.62794923782349,
+    "hn_state": 432.29326033592224,
+    "hn_lev": 563.1525840759277,
+    "hn_near": 167.02526998519897,
+    "legal_compat": 530.2489926815033,
+    "domain_ratio": 188.22570872306824,
+    "addr_empty_any": 0.0,
+    "name_weighted_overlap": 1608.8102462291718,
+    "name_genericity": 2909.7442276477814,
+    "colocation": 319.70533990859985,
+    "rank_in_entity": 2355.5034608840942,
+    "max_in_entity": 659.7939908504486,
+    "gap_to_best": 1416.4813945293427,
+    "n_candidates": 0.0,
+    "is_best": 35.10267114639282,
+    "p1": 2862691.579663515,
+    "p1_rank": 223223.39258384705,
+    "p1_gap": 117500.3367664814,
+    "n_strong": 1831.227386713028,
+    "sum_p1": 39367.85416650772,
+    "claim_rank": 9895.912079334259,
+    "claim_gap": 4038.783093690872,
+    "n_claims": 1693.1323282718658,
+    "n_strong_claims": 569883.3112373352,
+    "p1_second": 10309.211529493332,
+    "peer1_sim": 5559.150911331177,
+    "peer2_sim": 7513.560425758362
+  },
+  "decision": {
+    "assign": "soft",
+    "select": "expected_f",
+    "thr": null,
+    "miss": 0.0,
+    "f05": 0.9512278091438816
+  },
+  "ablation": {
+    "stage1_threshold": 0.9490304589632222,
+    "stage2_threshold": 0.950836153558208,
+    "decision_best": 0.9512278091438816
+  },
+  "sample": 30000
+}

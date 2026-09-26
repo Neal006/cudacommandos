@@ -1,0 +1,10 @@
+mlguard watch: fold 14 flagged: fold 14 iter 990: valid loss rose 5 evals in a row while train loss fell
+mlguard watch: fold 20 flagged: fold 20 iter 220: valid loss rose 5 evals in a row while train loss fell
+mlguard watch: fold 22 flagged: fold 22 iter 230: valid loss rose 5 evals in a row while train loss fell
+mlguard watch: fold 24 flagged: fold 24 iter 260: valid loss rose 5 evals in a row while train loss fell
+== mlguard watch runs/004_v2_30k_fixstop/metrics.jsonl ==
+[FAIL] diverging_valid        fold 14 iter 990: valid loss rose 5 evals in a row while train loss fell
+[FAIL] diverging_valid        fold 20 iter 220: valid loss rose 5 evals in a row while train loss fell
+[FAIL] diverging_valid        fold 22 iter 230: valid loss rose 5 evals in a row while train loss fell
+[FAIL] diverging_valid        fold 24 iter 260: valid loss rose 5 evals in a row while train loss fell
+RESULT: FAIL

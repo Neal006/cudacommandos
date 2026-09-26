@@ -1,0 +1,5 @@
+# core.autocrlf=true is common on the Windows boxes here, which rewrites
+# shell scripts to CRLF on checkout. bash then fails on the stray \r:
+# "set -euo pipefail\r: command not found". Pin the scripts to LF so the
+# same checkout runs in Git Bash and on Linux/AWS.
+*.sh text eol=lf

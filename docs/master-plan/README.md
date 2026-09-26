@@ -20,6 +20,7 @@ and the source of truth for any number quoted here.
 | [DATA_SECURITY_AND_LEAKAGE.md](DATA_SECURITY_AND_LEAKAGE.md) | Leakage map, validation protocol, compliance with the fair-play rules, data handling |
 | [MODEL_SELECTION.md](MODEL_SELECTION.md) | Candidate models (licence-checked) and the champion/challenger decision framework |
 | [MLGUARD.md](MLGUARD.md) | The Rust checker: what it enforces, how it runs during training / in CI / at test time |
+| [GPU_PLAN.md](GPU_PLAN.md) | RTX 3050 plan after review: what runs on the GPU (band reranker), what was dropped and why |
 
 ---
 

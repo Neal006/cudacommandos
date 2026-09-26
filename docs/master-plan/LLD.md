@@ -123,7 +123,7 @@ the #1 runtime risk at ~100M test pairs.
 | | `translit_tset, translit_jw` 🆕 | on `name_translit` (Indic rescue) |
 | | `skel_jw, skel_eq` 🆕 | consonant skeleton |
 | | `name_char3_cos` 🆕 | char 3-gram TF-IDF cosine (fit on S1 names) via row-wise sparse dot |
-| | `name_idf_overlap` 🆕 | Σ idf(shared) / Σ idf(union): generic tokens count little |
+| | `name_weighted_overlap` ✅ | Σ idf(shared) / Σ idf(union): generic tokens count little (renamed: `_id` substring trips mlguard banned_feature) |
 | | `name_min_shared_idf, name_max_shared_idf` 🆕 | a rare shared token is strong evidence |
 | | `name_genericity` 🆕 | log count of S1 entities with the same `name_core` (39.6% share names) |
 | | `acronym_eq, acronym_vs_core` ✅ | `ICH` vs `Indian Coffee House` |

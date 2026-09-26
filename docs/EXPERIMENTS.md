@@ -168,11 +168,151 @@ per-country breakdown of the *matcher* shows India dragging.
 
 ---
 
-## 003 — (next)
+## 003–005 — v2 pipeline on a 30k-entity sample (OOF only)
+2026-09-25/26 · Neal (Claude) · branch `nealstuff`
+Question: how much does each v2 layer add over the old feature set, all else equal?
+Setup:    `PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh <id> --sample 30000 --train-only`
+          same cached candidates (K=30, recall 0.9496), GroupKFold(5) by S1, laptop RTX 3050 4 GB.
 
-Not yet run. The full pipeline (`src/run_pipeline.py`, no flag) is ~6–7 hours
-end to end, dominated by test blocking. It produces the first real OOF F_0.5
-about 40 minutes in, well before the test phase.
+| Layer (OOF macro F_0.5) | 003 | 004 (stop fix) | 005 (+reranker) |
+|---|---:|---:|---:|
+| old 27 features, global threshold (`--ablate`) | 0.9266 | – | – |
+| stage 1: v2 features (+translit, skeleton, house no., legal form, domain, label-free S1 stats) | 0.9491 | 0.9490 | 0.9490 |
+| stage 2: + competition / peer context | 0.9507 | 0.9508 | **0.9600** ⚠ |
+| decision layer (calibrate + assign + expected-F) | 0.9510 | 0.9512 | crashed (OOM, see below) |
+
+Per country (004): India 0.9369, US 0.9606. Predicted singletons 6.5% vs 5.8% true; 3.13 links/entity.
+Global threshold lands at 0.68. Every decision mode is within 0.0005 — stage 2's claim features already
+encode the partition, so assignment adds ~nothing. Stage-2 gain: p1 72%, n_strong_claims 14%, p1_rank 6%.
+
+Reranker (`src/gpu/reranker.py`, e5-small, frozen word embeddings, bf16):
+- smoke (24k/6k entity split of the same sample): held-out AUC 0.9989, AP 0.9909 vs block_sim AUC 0.9566;
+  train 390 pairs/s, inference 1,870 pairs/s.
+- run 005: trained on 20k entities **outside** the sample (257k pairs, 11 min, valid AUC 0.9987); the
+  0.2–0.8 band is only **1.2% of pairs** (10.5k scored in 23 s) and lifted stage 2 by +0.009.
+
+Read:
+- v2 features are the big win (+0.0225). Stage 2 +0.0017, decision layer +0.0004.
+- ⚠ **Reranker +0.009 is not yet trusted.** S1 entities are disjoint, but an S2/S3 *record* can be in both
+  the reranker's training pairs (e.g. as a hard negative of another entity) and the GBDT sample's candidates
+  — memorised records do not exist at test time. Next: exclude every `cand_id` of the GBDT sample from
+  `make_training_pairs`, retrain, rerun 005. Keep the reranker only if the gain survives.
+- Run 005 died with MemoryError in the decision layer because an ad-hoc audit script was started next to it
+  (run 004 passed the same step). Re-run alone.
+- mlguard fixes found by these runs: `loss_ratio` false positive (now needs a stalled valid loss), a guard
+  stop now rolls LightGBM back to the best valid iteration (it used the stop iteration), NaN in
+  summary.json → null (strict JSON).
+- Train/valid F@0.5 gap: stage 1 ≈ 0.03 (train F is in-sample), stage 2 ≈ 0.007–0.014; mlguard run PASS.
+
+---
+
+## 007 — first full-sample run (150k) and first test phase ever run
+2026-09-26 · Priyanshu (Claude) · branch `nealstuff` + Windows fixes
+Question: does v2 hold at the full training sample, and what does the test phase actually cost?
+Setup:    `PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh 007_v2_full --sample 150000`
+          (no `--train-only`), laptop 10 cores / 23.7 GB, **CPU only — the RTX 3050 was absent from
+          the PCI bus this boot (Code 45), so no reranker.** GroupKFold(5) by S1, K=30.
+
+| Layer (OOF macro F_0.5) | 30k (004) | **150k (007)** |
+|---|---:|---:|
+| stage 1: v2 features | 0.9490 | **0.9500** |
+| stage 2: + competition / peer context | 0.9508 | **0.9526** |
+| decision layer | 0.9512 | **0.9532** |
+
+Per country: India 0.9399, US 0.9620 (30k: 0.9369 / 0.9606). Blocking recall 0.9498 on 4,499,993
+pairs from 150,000 entities, 492,739 positives. Predicted singletons 6.28% vs 5.63% true;
+3.138 links/entity against a true average of 3.46.
+
+Blocking recall is flat across sample size — 0.9506 at 2k, 0.9496 at 30k, 0.9498 at 150k — so the
+~0.95 ceiling is a property of the blocking design, not a small-sample artifact.
+
+### Test phase timings — the estimate this project was planned around is wrong
+
+First time the test phase has been run on any machine. Blocking, 1,732,544 S1 queries:
+
+| Partition | Queries | Index | Rate | Wall |
+|---|---:|---:|---:|---:|
+| France | 259,452 | 1,434,993 | ~1,010 q/s | 4.1 min |
+| India | 809,986 | 4,717,565 | 397 q/s | 34.0 min |
+| US | 663,106 | 3,817,031 | ~800 q/s | 13.8 min |
+| | | | **total** | **51.9 min** (+~5 min index builds) |
+
+`EXPLAINER.md` §"Full run on the laptop" budgets **255 min** for this stage, 62% of a 414-min run.
+Measured: **~57 min**, a 4.4x speedup — more than the 2.7x `sparse_dot_topn` was credited with,
+because the gain grows as the per-country index shrinks. Throughput tracks index SIZE, not query
+count: France's 1.4M-record index runs 2.5x the rate of India's 4.7M.
+
+That kills the case for renting hardware (§"Where to run it"). The laptop is the right box.
+
+Also: test US index is 3.82M records vs train's 6.19M, while test India is 4.72M vs train's 4.13M —
+the documented country shift, visible in the index sizes.
+
+Cached and worth sharing (`./aws/s3.sh share-cache`): `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet`,
+**51,974,499 pairs / 758 MB**, plus `stats_test_v1.pkl` (153 MB, 63 s).
+
+### Two conclusions from 003-005 that do not survive at full sample
+
+- **"Every decision mode is within 0.0005 ... assignment adds ~nothing"** — not at 150k. The best mode
+  is `assign='soft'` + `select='expected_f'` with `miss=0.1`, not the global threshold that won at 30k.
+  The gain is small (+0.0006 over stage 2) but the *choice* is sample-size dependent, so the decision
+  layer is doing real work where it looked inert. Do not delete it on the 30k evidence.
+
+  Reading the full 288-row `decision_table.csv` back, the two axes separate cleanly and neither is
+  large. `select` is where the gain lives: best `expected_f` 0.953182 vs best `threshold` 0.952573,
+  **+0.0006**. `assign` is noise: within `expected_f`, `soft` beats `none` by 0.00007 — seven
+  ten-thousandths, on 150k entities. So "keep the decision layer" is right, but the honest version is
+  *keep `expected_f`, and stop tuning `assign`*. Neither clears Neal's own 0.003 bar for added
+  complexity; both are kept because they are already written and cost nothing at inference. The
+  remaining headroom is 0.9532 against a blocking ceiling of 0.9903 — **3.7 points, all of it in the
+  matcher**, and concentrated in India. That is where the next hour goes, not here.
+- **`loss_ratio` still fires.** 004 recorded it fixed to need a stalled valid loss; at 150k it tripped
+  anyway — `fold 20 iter 210: valid/train loss 1.53 > 1.5` — stopping stage-2 fold 0 and rolling back
+  to its best iteration. The guard behaved correctly; the threshold in `mlguard.toml` is tuned on 30k
+  and wants revisiting before it silently truncates full-sample folds.
+
+Train/valid gaps shrink with sample, as expected: stage 1 0.004-0.017 and stage 2 0.001-0.003 at 150k,
+against 0.007-0.014 at 30k and 0.043 at 2k (which mlguard correctly FAILed on `overfit_gap`).
+Stage 1 fold 1 hit `best_iter 2000` = `MAX_ROUNDS` without early-stopping, so that fold was still
+improving when the cap cut it off — worth raising MAX_ROUNDS for full-sample runs.
+
+### No submission yet: the run hung in the test phase
+
+After blocking finished, the run deadlocked — 0% CPU, no children, 10.2 GB resident, silent.
+`split_stats` called `Pool(workers)` unconditionally (unlike `record_table` beside it, which guards on
+`workers > 1`). On the test split it runs with the 52M-pair frame resident, so the parent was at ~10 GB
+when it spawned; a worker died, the pool could not replace it (`PermissionError: [WinError 5]` from
+`DuplicateHandle`), and `pool.map` waited forever. It stalled rather than raised, which is the worse
+failure: 57 minutes of finished blocking sat on disk while the process held 10 GB doing nothing.
+Fixed in `c701d01`. Everything expensive was already cached, so the retry skips all blocking.
+
+**A second wall sits behind that one**, and the retry would have hit it. The test phase builds one
+feature frame for all 51,974,499 pairs at once: 46 float64 columns over 52M rows is ~19 GB, and
+stage 2's `concat` doubles it, against 23.7 GB total. `predict_test_chunked` (`9aad360`) streams it in
+entity-aligned chunks instead — two passes, because `claim_rank` / `claim_gap` / `n_claims` /
+`n_strong_claims` group by `cand_id` and one candidate can be claimed from different chunks, so stage 2
+is built once globally while only the wide stage-1 matrix is chunked. Cuts land only where `s1_id`
+changes, so every per-entity aggregate matches the unchunked result exactly. Peak drops from ~19 GB to
+roughly 1.5 GB per chunk. `AMLC_TEST_CHUNK` overrides the 4M default.
+
+Full narrative for this run, written for someone picking it up cold:
+[`runs/007_v2_full/CONTEXT.md`](../runs/007_v2_full/CONTEXT.md).
+
+### Windows portability — the branch could not start at all before this
+
+`nealstuff` had never run on a Windows box. Four fixes (`6a91330`, `8264b83`):
+- Pools sized `os.cpu_count() - 1` = 15 workers. Free under fork, fatal under spawn (each worker
+  re-imports pandas/polars/numpy/scipy, 250-400 MB). Died in MemoryError during pool startup and
+  orphaned the workers. Now `config.WORKERS`, capped at 4 on spawn, `AMLC_WORKERS` to override.
+- `_pick_data_dir` tested the drive letter, not the folder, so a mounted-but-empty `D:\amlc_data`
+  shadowed the real dataset and every path silently pointed at nothing.
+- `train_guarded.sh` ran a bare `python` — here the system 3.12 with pandas 3.0.3, the major version
+  requirements.txt pins against, and missing sparse_dot_topn and anyascii. It now prefers the venv and
+  prints which interpreter it chose.
+- That script was stored CRLF and `core.autocrlf=true` restores it, so bash choked on the `\r`.
+  `.gitattributes` pins `*.sh` to LF.
+
+New deps needed installing: polars, anyascii, sparse_dot_topn.
+
 
 Open questions worth an entry each:
 

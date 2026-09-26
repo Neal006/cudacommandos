@@ -15,7 +15,7 @@ class _Env:  # the slice of lightgbm's CallbackEnv the callback reads
                                        ("valid", "binary_logloss", va, False)]
 
 
-with tempfile.TemporaryDirectory() as d:
+with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
     log = RunLog(d)
     cb = log.lgb_callback(fold=0, every=1)
     for i in range(3):
@@ -29,6 +29,18 @@ with tempfile.TemporaryDirectory() as d:
     assert lines[0] == {"fold": 0, "iter": 0, "train_loss": 0.5, "valid_loss": 0.55}, lines[0]
     assert lines[-1] == {"event": "end"}
     assert json.loads((Path(d) / "summary.json").read_text())["threshold_source"] == "oof"
-    (Path(d) / "MLGUARD_STOP").write_text("x")
-    assert log.stop_requested()
+    (Path(d) / "MLGUARD_STOP").write_text("3\tdiverging_valid: fold 3 iter 90\n")
+    assert log.stop_requested() and log.stop_requested(3) and not log.stop_requested(0)
+    cb3 = RunLog(d).lgb_callback(fold=3, every=10)
+    try:
+        for i, va in enumerate([0.3, 0.2, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.31, 0.32], start=1):
+            cb3(_Env(i, 0.1, va))   # best valid at iter 2; the stop is read at iter 10
+        raise AssertionError("fold 3 should have been stopped")
+    except Exception as e:  # lightgbm's EarlyStopException
+        assert type(e).__name__ == "EarlyStopException", e
+        assert e.best_iteration == 2, e.best_iteration      # rolled back, not iter 10
+    RunLog(d).write_summary(run_id="t", oof_score=0.9, threshold_source="oof", folds=[],
+                            decision={"thr": float("nan"), "miss": float("inf")})
+    assert json.loads((Path(d) / "summary.json").read_text())["decision"] == {"thr": None, "miss": None}
+    RunLog(d).lgb_callback(fold=0, every=1)(_Env(10, 0.1, 0.2))  # other folds keep training
 print("runlog ok")

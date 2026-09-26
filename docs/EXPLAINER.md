@@ -394,28 +394,47 @@ All figures below come from measurements on this laptop (10 physical cores,
 ### Measured rates
 
 ```
-blocking, India partition     ~88 queries/sec     (denser word lists)
-blocking, US partition       ~156 queries/sec
-feature computation        11,710 pairs/sec
+blocking, test France     1,066 queries/sec   (259k queries vs 1.43M records)
+blocking, test US           800 queries/sec   (663k queries vs 3.82M records)
+blocking, test India        397 queries/sec   (810k queries vs 4.72M records)
+feature computation     ~11,700 pairs/sec
 ```
 
+**Blocking throughput is not a property of the machine.** It is a property of
+the index being searched: bigger index, or denser posting lists for the
+query's tokens, means each query touches more of the matrix. Notice that US
+searches *fewer* records than India and is still twice as fast — Indian names
+and addresses share more tokens.
+
+An earlier draft of this section extrapolated the test phase from the
+*training* run's rate (75–150 q/s) and predicted 255 minutes. The real run
+took **52**. The estimate was not arithmetically wrong; it applied a rate
+measured against one index to a different one. Quote q/s with the index it
+came from, or don't quote it.
+
 ### Full run on the laptop, stage by stage
+
+Measured end to end in run 007 (2026-09-26), except the two rows marked ⁺,
+which the run did not reach:
 
 | Stage | Work | Time |
 |---|---|---:|
 | Load train | 12.5M rows of TSV | 5 min |
-| Train blocking | 150k queries | 23 min |
-| Featurize train | 4.5M pairs | 10 min |
-| Train LightGBM | 5 folds | 8 min |
-| Threshold sweep | 90 cutoffs | 3 min |
+| Train blocking | 150k queries | 8 min |
+| Featurize train | 4.5M pairs | 2 min |
+| Stage-1 LightGBM | 5 folds | 33 min |
+| Stage-2 LightGBM | 5 folds | 28 min |
+| Decision-layer tuning | 288 combinations | 7 min |
 | Load test | 11.7M rows | 5 min |
-| **Test blocking** | **1.73M queries** | **255 min** |
-| **Featurize test** | **52M pairs** | **90 min** |
-| Predict + write | 52M rows | 13 min |
-| | **total** | **≈ 6.9 hours** |
+| **Test blocking** | **1.73M queries** | **52 min** |
+| **Featurize + score test**⁺ | **52M pairs, two passes** | **~80 min** |
+| Predict + write⁺ | 52M rows | ~13 min |
+| | **total** | **≈ 3.9 hours** |
 
-**Two stages are 84% of the runtime**, and both are the same shape: millions
-of small independent operations.
+The shape of the problem changed with the numbers. Blocking is no longer the
+dominant cost — **model training is**, at 68 of the 145 minutes that were
+actually measured. Test scoring is the other big block, and it is the one
+stage still carrying an estimate rather than a measurement.
 
 ### The thing that decides everything: this workload is single-threaded CPU
 
@@ -426,21 +445,27 @@ of small independent operations.
 | String similarity (rapidfuzz) | no | **no** |
 | LightGBM training | no | yes |
 
-Only LightGBM is parallel, and it's 8 minutes of the 414.
+LightGBM is the parallel one, and now that blocking has come down to 52
+minutes it is **68 minutes of the 234** — no longer a rounding error, and the
+single biggest measured stage.
 
-**So a GPU does nothing here.** Your RTX 3050 sits idle for the entire run,
-and so would a T4 on Colab or SageMaker. Renting GPU hardware for this
-pipeline buys you nothing.
+**A GPU still does nothing here.** Your RTX 3050 sits idle for the entire
+run, and so would a T4 on Colab or SageMaker: LightGBM's GPU build helps
+mainly on wide dense matrices, and 46 features over 4.5M rows is neither.
+Renting GPU hardware for *this* pipeline buys you nothing. The one place a
+GPU would earn its keep is the Indic-script gap — embedding ~12M records is
+hours on CPU and 20–40 minutes on a T4 — which is Krisha's branch, not this
+one.
 
 ### Comparison
 
 | Where | Spec | Est. time | Cost | Verdict |
 |---|---|---:|---:|---|
-| **This laptop** | 10 cores, 25 GB | **~7 h** | free | Baseline |
-| Colab (free) | 2 vCPU, 13 GB, T4 | **8–12 h** | free | **Worse.** Fewer cores, slower CPUs, GPU unused. **12-hour session cap with idle disconnects** — a 7h job can die at hour 6 and lose everything. Plus 2.4 GB of data to upload each session |
-| Colab Pro | 2–4 vCPU, T4/L4 | 7–9 h | ~₹1k/mo | Fixes the disconnect risk, not the speed |
-| SageMaker `ml.g4dn.xlarge` | 4 vCPU, 16 GB, T4 | 7–8 h | ~$6 | No faster. GPU wasted. Only merit: frees your laptop |
-| SageMaker `ml.m5.4xlarge` | 16 vCPU, 64 GB | 6.5–7 h | ~$6.5 | Marginal as-is. RAM headroom removes the memory juggling |
+| **This laptop** | 10 cores, 25 GB | **~4 h** | free | Baseline (measured) |
+| Colab (free) | 2 vCPU, 13 GB, T4 | **6–9 h** | free | **Worse.** Fewer cores, slower CPUs, GPU unused. **12-hour session cap with idle disconnects**, and 2.4 GB of data to upload each session |
+| Colab Pro | 2–4 vCPU, T4/L4 | 5–7 h | ~₹1k/mo | Fixes the disconnect risk, not the speed |
+| SageMaker `ml.g4dn.xlarge` | 4 vCPU, 16 GB, T4 | 5–6 h | ~$6 | No faster. GPU wasted, and 16 GB is *less* RAM than the laptop |
+| SageMaker `ml.m5.4xlarge` | 16 vCPU, 64 GB | 2–3 h | ~$6.5 | The only one that genuinely wins: more cores for the pools, and RAM headroom that removes the chunking entirely |
 
 **Renting hardware does not meaningfully help**, because the bottleneck is
 single-thread Python, and cloud CPUs are not faster per-core than a modern
@@ -451,20 +476,25 @@ laptop.
 Both slow stages are *embarrassingly parallel* — every chunk of queries is
 independent. Running them across processes instead of one:
 
-| Setup | Workers | Blocking | Features | Total |
+**This is already done.** `config.WORKERS` drives multiprocessing pools in
+`ingest.py` and `features_v2.py`, and the 52-minute test blocking above is the
+parallel number, not the serial one.
+
+The remaining lever is RAM, not cores. On Windows the pools start with
+`spawn`, so every worker is a fresh interpreter that re-imports pandas, numpy,
+scipy and rapidfuzz — 250–400 MB resident before it does any work. That caps
+us at 4 workers on a 25 GB box; asking for 15 killed run 005 during pool
+startup. A 64 GB instance runs 12 and the cap disappears.
+
+| Setup | Workers | Blocking | Score test | Total |
 |---|---:|---:|---:|---:|
-| Laptop today | 1 | 255 min | 90 min | **~7 h** |
-| Laptop + multiprocessing | 4 (RAM-limited) | ~70 min | ~25 min | **~2.5 h** |
-| `ml.m5.4xlarge` + multiprocessing | 12 (64 GB) | ~25 min | ~10 min | **~1.5 h** |
+| Laptop, serial (the old estimate) | 1 | 255 min | 90 min | ~7 h |
+| **Laptop today** | **4 (RAM-capped)** | **52 min** | ~80 min | **~4 h** |
+| `ml.m5.4xlarge` | 12 (64 GB) | ~25 min | ~30 min | **~2.5 h** |
 
-Roughly an hour of engineering saves four and a half hours *per run* — and
-there will be several runs. On the laptop the limit is RAM (each worker needs
-its own copy of the search index), which is exactly what a big-memory cloud
-instance fixes.
-
-**Recommended order:** run once on the laptop tonight to get a real score, add
-multiprocessing while it runs, and only move to the cloud if you want several
-experiments in parallel.
+**Recommended order:** keep running on the laptop — it is the fastest machine
+we have access to for this workload, and it is free. Move to `m5.4xlarge`
+only if several experiments need to run at once.
 
 ### It's only slow once
 
@@ -473,12 +503,14 @@ different features, different threshold, different model — skip blocking
 entirely:
 
 ```
-first run        ~7 h     (blocking dominates)
-every run after  ~25 min  (cached candidates, just features + train)
+first run        ~4 h      (train 2h11m + test blocking 52m + scoring)
+every run after  ~80 min   (cached candidates and stats; train + score only)
 ```
 
-Which is also why sharing that cache on S3 matters: one person pays the seven
-hours, everyone else pulls the parquet and starts at 25 minutes.
+Which is also why sharing that cache on S3 matters: one person pays for test
+blocking, everyone else pulls the parquet. After run 007 that is 758 MB of
+candidates plus a 153 MB stats pickle — together they are 56 minutes of
+compute that nobody else has to spend.
 
 ```bash
 ./aws/s3.sh share-cache          # whoever ran it

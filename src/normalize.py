@@ -220,3 +220,100 @@ def add_feature_columns(df, name_col=None, addr_col=None):
     if "_blob" not in df.columns:
         df["_blob"] = (df["_core_name"] + " " + df["_core_addr"]).str.strip()
     return df
+
+
+# ---------------------------------------------------------------------------
+# v2 forms (features only). Nothing below feeds `_blob`, so blocking output and
+# candidate caches are unchanged by these additions.
+# ---------------------------------------------------------------------------
+try:  # ISC licence, offline tables. Transliterates all 9 Indic scripts in the data.
+    from anyascii import anyascii as _to_ascii
+except ImportError:  # degrades to accent folding only; Indic names stay unmatched
+    _to_ascii = _strip_accents
+
+_NON_LATIN = re.compile(r"[^\x00-ɏ]")
+_FIRST_NUM = re.compile(r"\d+")
+_DOMAIN_RE = re.compile(r"^\W*(?:www\.)?([a-z0-9][a-z0-9\-]*)\.(?:com|in|net|org|co|fr|biz|info|us)\s*$", re.I)
+
+# Legal forms as they appear after transliteration of Indic-script names
+# ("प्राइवेट लिमिटेड" -> "praivet limited"); kept out of LEGAL_SUFFIXES so the
+# blocking blob does not change.
+TRANSLIT_LEGAL = {"praivet", "prayvet", "privet", "piraivet", "limitet", "limited", "limted",
+                  "elelpi", "pvt", "ltd", "llp", "inc", "llc", "corp", "co"}
+
+# Canonical legal class. Two records with *different* classes (LLC vs SARL) are
+# evidence against a match; a missing class is not (sources drop suffixes).
+_LEGAL_CLASS = [
+    ({"llc"}, "LLC"), ({"llp", "elelpi"}, "LLP"), ({"inc", "incorporated"}, "INC"),
+    ({"corp", "corporation"}, "CORP"), ({"plc"}, "PLC"), ({"lp"}, "LP"),
+    ({"sarl"}, "SARL"), ({"sas"}, "SAS"), ({"sasu"}, "SASU"), ({"eurl"}, "EURL"),
+    ({"sci"}, "SCI"), ({"snc"}, "SNC"), ({"gmbh"}, "GMBH"),
+]
+_PRIVATE = {"pvt", "private", "praivet", "prayvet", "privet", "piraivet"}
+_LIMITED = {"ltd", "limited", "limitet", "limted"}
+
+
+def translit(s) -> str:
+    """Latin rendering of any script; accents folded. 'राम मार्केटिंग' -> 'ram marketimg'."""
+    s = "" if s is None else str(s)
+    return _to_ascii(s) if _NON_LATIN.search(s) else _strip_accents(s)
+
+
+def is_native_script(s) -> bool:
+    return bool(_NON_LATIN.search("" if s is None else str(s)))
+
+
+def translit_core(s) -> str:
+    """core_name on the transliterated text, with transliterated legal words dropped.
+    A domain-style name reduces to its stem ('deltatelecommunication.com' -> stem)."""
+    stem = domain_stem(s)
+    if stem:
+        return stem
+    toks = [t for t in core_name(translit(s)).split() if t not in TRANSLIT_LEGAL]
+    return " ".join(toks)
+
+
+def skeleton(core: str) -> str:
+    """Consonant skeleton of an already-transliterated core name.
+
+    Verified on 20k native-script India positives: 94.4% share >=1 skeleton
+    token with their S1 name (raw tokens: ~0%). Coarse by design — a feature,
+    never a decision (tools/eda/skeleton_prototype.py holds the self-check).
+    """
+    s = re.sub(r"[^a-z ]", "", core.lower())
+    s = re.sub(r"\by(?=[aeiou])", "", s)
+    s = re.sub(r"(?<=[aeiou])gh", "", s)
+    for a, b in (("ction", "ksn"), ("tion", "sn"), ("ph", "f"), ("th", "t"),
+                 ("kh", "k"), ("sh", "s"), ("ch", "s"), ("ck", "k")):
+        s = s.replace(a, b)
+    s = re.sub(r"c(?=[aoukrlt]|\b)", "k", s)
+    s = re.sub(r"m(?=[^aeiou ])", "n", s)
+    s = s.translate(str.maketrans("gbdvzjcq", "kptwsssk"))
+    out = []
+    for w in s.split():
+        w = w[0] + re.sub(r"[aeiouy]", "", w[1:])
+        out.append(re.sub(r"(.)\1+", r"\1", w))
+    return " ".join(out)
+
+
+def legal_form(s) -> str:
+    """Canonical legal class from anywhere in the name ('' when none)."""
+    toks = set(basic_clean(translit(s)).split())
+    if toks & _PRIVATE and toks & _LIMITED:
+        return "PVT_LTD"
+    for keys, cls in _LEGAL_CLASS:
+        if toks & keys:
+            return cls
+    return "LTD" if toks & _LIMITED else ""
+
+
+def first_number(s) -> str:
+    """First digit run of the raw address — usually the house/plot number."""
+    m = _FIRST_NUM.search("" if s is None else str(s))
+    return m.group(0) if m else ""
+
+
+def domain_stem(s) -> str:
+    """'deltatelecommunication.com' -> 'deltatelecommunication'; '' if not a domain."""
+    m = _DOMAIN_RE.match(_strip_accents("" if s is None else str(s)).strip())
+    return m.group(1).lower().replace("-", "") if m else ""
