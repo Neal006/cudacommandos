@@ -1,3 +1,40 @@
-data
-6ab5628d5a817_amazon_ml_challenge_problem_statement.pdf
-6ab56657b4f1a_guidelines_and_key_instructions_amazon_ml_challenge_2026.pdf
+.venv/
+__pycache__/
+*.pyc
+
+# Dataset lives outside the repo (~2.4 GB) — see README. These are a safety net.
+data/
+dataset/
+*.tsv
+*.tsv.zip
+*.parquet
+
+# Pipeline outputs: matching_results.tsv for the full test set is ~100 MB.
+output/*.tsv
+# submissions/ keeps the scored file GZIPPED (~25 MB) so it clears GitHub's
+# 100 MB limit. *.tsv above does not match *.tsv.gz, but be explicit -- a
+# submission silently missing from a commit is the worst way to find out.
+!submissions/**/*.tsv.gz
+*.npy
+*.pkl
+
+# never commit credentials
+.aws-credentials
+*.pem
+.env
+.claude/settings.local.json
+
+# run logs are machine-local noise
+logs/
+
+# mlguard build output and scratch run artefacts
+tools/mlguard/target/
+runs/*/MLGUARD_STOP
+runs/adhoc/
+# smoke runs are a 2k-entity 'does it start at all' check, rebuilt in a minute
+runs/smoke_*/
+
+# mlguard's fixtures are tiny hand-written TSVs the checker tests against, so
+# they have to survive the blanket *.tsv rule above. Keep this negation last —
+# gitignore takes the last matching pattern.
+!tools/mlguard/fixtures/**/*.tsv

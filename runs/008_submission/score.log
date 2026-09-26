@@ -1,0 +1,65 @@
+[    0.1s] loaded runs\007_v2_full\model.pkl: 5 stage-1 models, 5 stage-2, decision {'assign': 'soft', 'select': 'expected_f', 'thr': nan, 'miss': 0.1, 'f05': 0.9531816304765968}
+[  101.6s] loading cached candidates: cands_test_k30_df0.01_mdf3_ctry1_nall.parquet
+[  121.5s] test: 51,974,499 pairs over 1,732,494 entities; 50 of 1,732,544 got no candidates and will be written empty
+[  185.1s] test scoring in 26 entity-aligned chunks of ~2,000,000 pairs (L 1,732,494 records, source pool 9,969,589)
+[  353.9s]   stage-1 chunk 1/26 rows 0-2,000,010
+[  519.8s]   stage-1 chunk 2/26 rows 2,000,010-4,000,021
+[  767.1s]   stage-1 chunk 3/26 rows 4,000,021-6,000,044
+[  938.0s]   stage-1 chunk 4/26 rows 6,000,044-8,000,067
+[ 1101.0s]   stage-1 chunk 5/26 rows 8,000,067-10,000,073
+[ 1262.3s]   stage-1 chunk 6/26 rows 10,000,073-12,000,102
+[ 1422.8s]   stage-1 chunk 7/26 rows 12,000,102-14,000,124
+[ 1583.8s]   stage-1 chunk 8/26 rows 14,000,124-16,000,151
+[ 1743.2s]   stage-1 chunk 9/26 rows 16,000,151-18,000,171
+[ 1903.1s]   stage-1 chunk 10/26 rows 18,000,171-20,000,181
+[ 2063.1s]   stage-1 chunk 11/26 rows 20,000,181-22,000,191
+[ 2224.0s]   stage-1 chunk 12/26 rows 22,000,191-24,000,212
+[ 2383.4s]   stage-1 chunk 13/26 rows 24,000,212-26,000,220
+[ 2543.6s]   stage-1 chunk 14/26 rows 26,000,220-28,000,230
+[ 2702.7s]   stage-1 chunk 15/26 rows 28,000,230-30,000,249
+[ 2864.6s]   stage-1 chunk 16/26 rows 30,000,249-32,000,255
+[ 3024.0s]   stage-1 chunk 17/26 rows 32,000,255-34,000,282
+[ 3183.4s]   stage-1 chunk 18/26 rows 34,000,282-36,000,292
+[ 3343.7s]   stage-1 chunk 19/26 rows 36,000,292-38,000,301
+[ 3503.3s]   stage-1 chunk 20/26 rows 38,000,301-40,000,315
+[ 3664.7s]   stage-1 chunk 21/26 rows 40,000,315-42,000,325
+[ 3824.8s]   stage-1 chunk 22/26 rows 42,000,325-44,000,351
+[ 3985.2s]   stage-1 chunk 23/26 rows 44,000,351-46,000,359
+[ 4144.4s]   stage-1 chunk 24/26 rows 46,000,359-48,000,368
+[ 4305.0s]   stage-1 chunk 25/26 rows 48,000,368-50,000,384
+[ 4461.0s]   stage-1 chunk 26/26 rows 50,000,384-51,974,499
+[ 4588.7s] stage-2 claim features built globally: (51974499, 4)
+[ 4686.8s]   stage-2 chunk 1/26 rows 0-2,000,010
+[ 4783.4s]   stage-2 chunk 2/26 rows 2,000,010-4,000,021
+[ 4881.8s]   stage-2 chunk 3/26 rows 4,000,021-6,000,044
+[ 4979.7s]   stage-2 chunk 4/26 rows 6,000,044-8,000,067
+[ 5076.8s]   stage-2 chunk 5/26 rows 8,000,067-10,000,073
+[ 5174.5s]   stage-2 chunk 6/26 rows 10,000,073-12,000,102
+[ 5271.9s]   stage-2 chunk 7/26 rows 12,000,102-14,000,124
+[ 5370.2s]   stage-2 chunk 8/26 rows 14,000,124-16,000,151
+[ 5467.0s]   stage-2 chunk 9/26 rows 16,000,151-18,000,171
+[ 5563.9s]   stage-2 chunk 10/26 rows 18,000,171-20,000,181
+[ 5660.7s]   stage-2 chunk 11/26 rows 20,000,181-22,000,191
+[ 5760.1s]   stage-2 chunk 12/26 rows 22,000,191-24,000,212
+[ 5857.8s]   stage-2 chunk 13/26 rows 24,000,212-26,000,220
+[ 5955.3s]   stage-2 chunk 14/26 rows 26,000,220-28,000,230
+[ 6054.8s]   stage-2 chunk 15/26 rows 28,000,230-30,000,249
+[ 6152.5s]   stage-2 chunk 16/26 rows 30,000,249-32,000,255
+[ 6250.2s]   stage-2 chunk 17/26 rows 32,000,255-34,000,282
+[ 6348.1s]   stage-2 chunk 18/26 rows 34,000,282-36,000,292
+[ 6447.1s]   stage-2 chunk 19/26 rows 36,000,292-38,000,301
+[ 6544.0s]   stage-2 chunk 20/26 rows 38,000,301-40,000,315
+[ 6641.4s]   stage-2 chunk 21/26 rows 40,000,315-42,000,325
+[ 6739.5s]   stage-2 chunk 22/26 rows 42,000,325-44,000,351
+[ 6837.6s]   stage-2 chunk 23/26 rows 44,000,351-46,000,359
+[ 6935.1s]   stage-2 chunk 24/26 rows 46,000,359-48,000,368
+[ 7031.9s]   stage-2 chunk 25/26 rows 48,000,368-50,000,384
+[ 7127.5s]   stage-2 chunk 26/26 rows 50,000,384-51,974,499
+[ 7128.9s] scored 51,974,499 pairs in 116.8 min
+Traceback (most recent call last):
+  File "C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\src\score_test.py", line 103, in <module>
+    main(ap.parse_args())
+  File "C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\src\score_test.py", line 91, in main
+    log(f"predicted singleton rate {sing:.4f}  links/entity {links:.2f}")
+                                   ^^^^^^^^^^
+TypeError: unsupported format string passed to dict.__format__

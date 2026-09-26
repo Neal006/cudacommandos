@@ -1,0 +1,25 @@
+[    0.0s] run v2_20260925_2321 -> runs\003_v2_30k
+[   61.0s] loading cached candidates: cands_train_k30_df0.01_mdf3_ctry1_n30000.parquet
+[   66.4s] train: 30,000 entities, 900,000 pairs, 98,439 positives, blocking recall 0.9496
+[  114.4s] features (900000, 46)
+[  217.3s] stage 9 fold 0: best_iter 1077  F@0.5 train 0.9603 valid 0.9195
+[  329.1s] stage 9 fold 1: best_iter 1147  F@0.5 train 0.9594 valid 0.9250
+[  441.5s] stage 9 fold 2: best_iter 1101  F@0.5 train 0.9593 valid 0.9251
+[  557.8s] stage 9 fold 3: best_iter 1341  F@0.5 train 0.9655 valid 0.9252
+[  669.2s] stage 9 fold 4: best_iter 1090  F@0.5 train 0.9616 valid 0.9243
+[  713.9s] ablation (old features, global threshold): 0.9266
+[  807.9s] stage 1 fold 0: best_iter 923  F@0.5 train 0.9737 valid 0.9439
+[  896.1s] stage 1 fold 1: best_iter 969  F@0.5 train 0.9718 valid 0.9480
+[  983.3s] stage 1 fold 2: best_iter 982  F@0.5 train 0.9739 valid 0.9486
+[ 1072.1s] stage 1 fold 3: best_iter 1024  F@0.5 train 0.9748 valid 0.9434
+[ 1159.5s] stage 1 fold 4: best_iter 1101  F@0.5 train 0.9755 valid 0.9455
+[ 1198.2s] stage 1 (v2 features, global threshold): 0.9491
+[ 1274.0s] stage 2 fold 0: best_iter 281  F@0.5 train 0.9584 valid 0.9447
+[ 1344.3s] stage 2 fold 1: best_iter 291  F@0.5 train 0.9551 valid 0.9485
+[ 1413.9s] stage 2 fold 2: best_iter 271  F@0.5 train 0.9567 valid 0.9492
+[ 1482.7s] stage 2 fold 3: best_iter 172  F@0.5 train 0.9519 valid 0.9461
+[ 1569.0s] stage 2 fold 4: best_iter 210  F@0.5 train 0.9549 valid 0.9491
+[ 1615.8s] stage 2 (global threshold): 0.9507
+[ 1656.7s] decision layer best: {'assign': 'soft', 'select': 'expected_f', 'thr': nan, 'miss': 0.1, 'f05': 0.9510254119734556}
+[ 1658.7s] per country: {'India': 0.9366085007654937, 'US': 0.9604407322091162}  predicted singletons 0.065  links/entity 3.13
+[ 1660.0s] train-only: done

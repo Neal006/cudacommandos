@@ -1,0 +1,64 @@
+{
+  "run_id": "fixture_leaky",
+  "oof_score": 0.998,
+  "threshold_source": "train",
+  "blocking_recall": 0.95,
+  "folds": [
+    {
+      "fold": 0,
+      "train_score": 1.0,
+      "valid_score": 0.93,
+      "best_iter": 2000,
+      "max_iter": 2000
+    },
+    {
+      "fold": 1,
+      "train_score": 1.0,
+      "valid_score": 0.93,
+      "best_iter": 2000,
+      "max_iter": 2000
+    },
+    {
+      "fold": 2,
+      "train_score": 1.0,
+      "valid_score": 0.93,
+      "best_iter": 2000,
+      "max_iter": 2000
+    },
+    {
+      "fold": 3,
+      "train_score": 1.0,
+      "valid_score": 0.93,
+      "best_iter": 2000,
+      "max_iter": 2000
+    },
+    {
+      "fold": 4,
+      "train_score": 1.0,
+      "valid_score": 0.93,
+      "best_iter": 2000,
+      "max_iter": 2000
+    }
+  ],
+  "per_country": {
+    "US": 0.915,
+    "India": 0.89
+  },
+  "oof_pred_singleton_rate": 0.071,
+  "true_singleton_rate": 0.056,
+  "oof_pred_links_per_entity": 3.1,
+  "test_pred_singleton_rate": {
+    "US": 0.07,
+    "India": 0.08,
+    "France": 0.62
+  },
+  "test_pred_links_per_entity": {
+    "US": 3.2,
+    "India": 3.0,
+    "France": 2.6
+  },
+  "feature_importance": {
+    "cand_entity_id_num": 90,
+    "core_token_sort": 10
+  }
+}

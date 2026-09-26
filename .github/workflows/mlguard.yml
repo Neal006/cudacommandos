@@ -1,0 +1,84 @@
+name: mlguard
+
+# Trust gate for the matcher. Fails the check when a committed run shows
+# overfitting, leakage, test drift, or a regression against the champion.
+on:
+  push:
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            tools/mlguard/target
+          key: mlguard-${{ runner.os }}-${{ hashFiles('tools/mlguard/Cargo.toml', 'tools/mlguard/src/**') }}
+
+      - name: Fair-play gate — no network / LLM / geocoding clients in the pipeline
+        run: |
+          if grep -rnE '^\s*(import|from)\s+(requests|httpx|urllib|aiohttp|openai|anthropic|google\.generativeai|googlemaps|geopy)\b' src/; then
+            echo "external lookups are forbidden by the challenge rules (DATA_SECURITY_AND_LEAKAGE.md §1)"; exit 1
+          fi
+
+      - name: Unit tests
+        run: cargo test --release --manifest-path tools/mlguard/Cargo.toml
+
+      - name: Build
+        run: cargo build --release --manifest-path tools/mlguard/Cargo.toml
+
+      - name: Self-test — must pass the good fixtures and fail the bad ones
+        run: |
+          M=tools/mlguard/target/release/mlguard
+          F=tools/mlguard/fixtures
+          $M run $F/good_summary.json
+          if $M run $F/leaky_summary.json; then echo "leaky fixture was not caught"; exit 1; fi
+          $M watch $F/healthy_metrics.jsonl --once --stop-file /tmp/stop
+          if $M watch $F/overfit_metrics.jsonl --once --stop-file /tmp/stop; then echo "overfit fixture was not caught"; exit 1; fi
+          $M submission --matching $F/sub/matching_results.tsv --candidate $F/sub/candidate_pairs.tsv --test-dir $F/sub/test
+
+      - name: Python deps for the data-free tests
+        run: python3 -m pip install -q "pandas>=2.2,<3" "numpy<2.2" polars pyarrow rapidfuzz scipy scikit-learn anyascii lightgbm
+
+      - name: runlog.py writes what mlguard reads (and stops only the flagged fold)
+        run: python3 tools/mlguard/test_runlog.py
+
+      - name: Python unit tests (data-free)
+        run: |
+          python3 tests/test_decide.py
+          python3 tests/test_features_v2.py
+          # tests/test_embed_knn.py needs torch; run it locally on the GPU box
+
+      - name: Gate committed runs
+        run: |
+          M=tools/mlguard/target/release/mlguard
+          shopt -s nullglob
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            CHANGED=$(git diff --name-only "$BASE" HEAD -- 'runs/*/summary.json')
+          else
+            CHANGED=$(ls runs/*/summary.json 2>/dev/null || true)
+          fi
+          ALL=(runs/*/summary.json)
+          [ ${#ALL[@]} -eq 0 ] && { echo "no runs committed yet"; exit 0; }
+          rc=0
+          for s in "${ALL[@]}"; do
+            # champion comparison only for runs added/changed in this push — old runs may trail the champion
+            if [ -f runs/champion.json ] && echo "$CHANGED" | grep -qx "$s"; then
+              $M run "$s" --champion runs/champion.json || rc=1
+            else
+              $M run "$s" || rc=1
+            fi
+            d=$(dirname "$s")
+            [ -f "$d/folds.tsv" ] && { $M split --folds "$d/folds.tsv" || rc=1; }
+            [ -f "$d/metrics.jsonl" ] && { $M watch "$d/metrics.jsonl" --once --stop-file /tmp/stop || rc=1; }
+          done
+          exit $rc

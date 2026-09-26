@@ -1,0 +1,19 @@
+[    0.0s] run v2_20260926_0007 -> runs\004_v2_30k_fixstop
+[   62.5s] loading cached candidates: cands_train_k30_df0.01_mdf3_ctry1_n30000.parquet
+[   67.7s] train: 30,000 entities, 900,000 pairs, 98,439 positives, blocking recall 0.9496
+[  114.4s] features (900000, 46)
+[  211.2s] stage 1 fold 0: best_iter 923  F@0.5 train 0.9737 valid 0.9439
+[  301.9s] stage 1 fold 1: best_iter 969  F@0.5 train 0.9718 valid 0.9480
+[  388.1s] stage 1 fold 2: best_iter 982  F@0.5 train 0.9739 valid 0.9486
+[  476.3s] stage 1 fold 3: best_iter 1024  F@0.5 train 0.9748 valid 0.9434
+[  562.4s] stage 1 fold 4: best_iter 1036  F@0.5 train 0.9750 valid 0.9451
+[  600.2s] stage 1 (v2 features, global threshold): 0.9490
+[  675.0s] stage 2 fold 0: best_iter 174  F@0.5 train 0.9550 valid 0.9450
+[  756.6s] stage 2 fold 1: best_iter 184  F@0.5 train 0.9513 valid 0.9490
+[  826.6s] stage 2 fold 2: best_iter 175  F@0.5 train 0.9527 valid 0.9505
+[  895.8s] stage 2 fold 3: best_iter 176  F@0.5 train 0.9522 valid 0.9461
+[  964.1s] stage 2 fold 4: best_iter 169  F@0.5 train 0.9530 valid 0.9489
+[ 1000.5s] stage 2 (global threshold): 0.9508
+[ 1036.0s] decision layer best: {'assign': 'soft', 'select': 'expected_f', 'thr': nan, 'miss': 0.0, 'f05': 0.9512278091438816}
+[ 1038.1s] per country: {'India': 0.9368604200790532, 'US': 0.9606107877198315}  predicted singletons 0.065  links/entity 3.13
+[ 1039.2s] train-only: done

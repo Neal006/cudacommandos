@@ -1,0 +1,25 @@
+# mlguard thresholds. Every number here is a decision — change it in a PR with
+# a one-line reason, never silently. See docs/master-plan/MLGUARD.md.
+
+[run]
+max_fold_gap = 0.03            # train F0.5 - valid F0.5 on any fold (FAIL above)
+max_fold_std = 0.010           # std of per-fold valid F0.5 (FAIL above)
+too_good = 0.995               # OOF above this is a leak until proven otherwise (FAIL)
+ceiling_slack = 0.005          # OOF may not beat the blocking ceiling 1.25R/(0.25+R) by more than this
+max_top_feature_share = 0.60   # one feature holding >60% of gain smells like a leak (WARN)
+max_country_gap = 0.05         # any country below OOF by more than this (WARN)
+max_singleton_drift = 0.05     # |predicted - true| OOF singleton rate (WARN)
+max_test_singleton_drift = 0.10  # |test country singleton rate - OOF predicted rate| (FAIL)
+links_ratio_min = 0.6          # test links/entity divided by OOF links/entity, per country (FAIL outside)
+links_ratio_max = 1.4
+champion_tolerance = 0.002     # challenger may not be worse than champion by more than this (FAIL)
+banned_feature_patterns = ["entity_id", "_id", "row_idx", "index", "label", "target", "fold"]
+
+[watch]
+patience = 5                   # consecutive evals of rising valid loss while train loss falls
+max_loss_ratio = 1.5           # valid_loss / train_loss above this after warmup (FAIL)
+warmup_evals = 10
+poll_ms = 2000
+
+[submission]
+partition_violation_is_fail = false   # GT is a partition; duplicates across rows are a strong smell

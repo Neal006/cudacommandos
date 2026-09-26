@@ -1,0 +1,4 @@
+mlguard watch: fold 20 flagged: fold 20 iter 210: valid/train loss 1.53 > 1.5
+== mlguard watch runs/007_v2_full/metrics.jsonl ==
+[FAIL] loss_ratio             fold 20 iter 210: valid/train loss 1.53 > 1.5
+RESULT: FAIL
