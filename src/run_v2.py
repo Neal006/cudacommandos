@@ -354,8 +354,10 @@ def main(a):
                           {s: cand_sets.get(s, set()) for s in test_ids})
     del cand_sets, matches
     gc.collect()
-    sing, links, _, _ = rate_stats(tsel, test_ids, t_country)
-    summary.update(test_pred_singleton_rate=sing, test_pred_links_per_entity=links)
+    sing_by, links_by, sing, links = rate_stats(tsel, test_ids, t_country)
+    summary.update(test_pred_singleton_rate=sing, test_pred_links_per_entity=links,
+                   test_pred_singleton_rate_by_country=sing_by,
+                   test_pred_links_per_entity_by_country=links_by)
     run.write_summary(**summary)
     run.end()
     log(f"test outputs: {out}")

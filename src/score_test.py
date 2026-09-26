@@ -87,8 +87,11 @@ def main(a):
     del cand_sets, matches
     gc.collect()
 
-    sing, links, _, _ = rate_stats(tsel, test_ids, t_country)
+    # rate_stats returns the PER-COUNTRY dicts first, then the two scalars.
+    sing_by, links_by, sing, links = rate_stats(tsel, test_ids, t_country)
     log(f"predicted singleton rate {sing:.4f}  links/entity {links:.2f}")
+    for c in sorted(links_by):
+        log(f"  {c}: singleton {sing_by[c]:.4f}  links/entity {links_by[c]:.2f}")
     for k, v in out.items():
         log(f"  {k}: {v}")
     if out["entities_with_matches_outside_candidates"]:
