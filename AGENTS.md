@@ -29,10 +29,14 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
   US 800 (3.82M), India 397 (4.72M); US searches fewer records than India and is still 2x faster
   because Indian tokens are denser. Never quote q/s without the index it was measured against.
   EXPLAINER §11 and DATA_BRIEF corrected. Candidate cache `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet` (52.0M pairs, 758 MB) and `stats_test_v1.pkl` are built -- share via `./aws/s3.sh share-cache`.
-- NO SUBMISSION YET: the 007 test phase deadlocked in split_stats' pool (fixed, c701d01), and the
-  unchunked test featurization behind it would have OOMed next (fixed, 9aad360: predict_test_chunked,
-  two passes, entity-aligned cuts, ~19 GB -> ~1.5 GB peak). Caches survive, so a retry skips all
-  blocking and stats but still retrains stages 1-2 (~60 min; run_v2 has no resume).
+- SUBMISSION 001 uploaded (run 007 model, score_test.py, 117 min scoring): public LB **0.943, rank 933**
+  vs OOF 0.9532. Mix reweighting explains only 0.0006; if US/India transfer 1:1, France (15% of test,
+  0 labels) scores ~0.898. Deadline 27 Sep 2026 23:59 IST, 5 uploads/day. Team target 0.985 (vs
+  blocking ceiling ~0.989 -- needs recall AND matcher work). Plan: docs/master-plan/PLAN_985.md.
+- Shipped decision is assign=soft: one S2/S3 id CAN appear under several S1 in the output (GT is a
+  partition). Calibrator + miss=0.1 tuned on US/India only, applied blind to France.
+- Teammate branch sentence-transformer-embeddings-feature: English MiniLM cosines on the OLD
+  pipeline, 2k sample, no baseline, has an indentation bug -- do not merge as-is.
 - Test cache is 50 S1 entities short of the 1,732,544 required (1,732,494 got candidates). Expected,
   not a bug -- no token survives df pruning for them; write_outputs iterates the full test id list so
   they emit empty match sets. Do not treat it as a blocker at upload time.
@@ -103,6 +107,7 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - 2026-09-25 — run_v2.py beside run_pipeline.py, sharing its cache — no untested edits to the 6 h pipeline
 
 ## Changelog
+2026-09-26 | LB 0.943 post-mortem + plan to 0.985 | AGENTS.md, docs/master-plan/PLAN_985.md | France + partition + recall are the levers; no code changed
 2026-09-26 | runs 003–005 + guard fixes | src/runlog.py, src/run_v2.py, tools/mlguard/test_runlog.py, docs/EXPERIMENTS.md, GPU_PLAN.md | stop rolls back to best iter; NaN-safe summary; reranker gain held until leak audit
 2026-09-25 | v2 pipeline + GPU reranker + review fixes | src/{ingest,features_v2,stage2,decide,run_v2}.py, src/gpu/*, blocking.py, normalize.py, runlog.py, tools/mlguard/src/*, tests/*, docs/master-plan/GPU_PLAN.md | precision over recall; identical-output speedups; GPU job 2/4 dropped per review
 2026-09-25 | Master plan + mlguard + EDA | docs/master-plan/*, tools/mlguard/*, tools/eda/*, src/runlog.py, .github/workflows/mlguard.yml, AGENTS.md | plan built on measured data; checker gates runs in bg/CI/test
