@@ -1,5 +1,5 @@
 # AGENTS.md — Project Memory (auto-maintained)
-Last updated: 2026-09-25 | Sessions logged: 2
+Last updated: 2026-09-26 | Sessions logged: 3
 
 ## Identity
 Team cudacommandos' solution to the Amazon ML Challenge 2026 "Business Entity Resolution": match S2/S3 business records to deduplicated S1 entities (US/India train, + France test), scored by macro F0.5.
@@ -15,6 +15,7 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
 - v2 pipeline (OOF only): `python src/run_v2.py --sample 30000 --train-only --ablate`; full: `PIPELINE=src/run_v2.py tools/mlguard/train_guarded.sh <run_id> --sample 150000`
 - data-free tests: `python tests/test_decide.py && python tests/test_features_v2.py` (+ `tests/test_embed_knn.py` needs torch)
 - GPU reranker: `python src/gpu/reranker.py train --exclude runs/<id>/folds.tsv --entities 40000 --out models/rr_e5s`
+- laya reranker (docs/LAYA.md): `python src/gpu/laya_rr.py fetch|train|bench`; tests `python tests/test_laya_rr.py` (data-free), `python tests/smoke_laya_rr.py` (GPU, synthetic)
 
 ## Current State & Focus
 - Works: word TF-IDF blocking (per country, K=30, recall ceiling 0.95), ~30 rapidfuzz features, LightGBM GroupKFold, global threshold, output writer (branch pipeline/entity-resolution).
@@ -40,7 +41,11 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
   soft assign beats none by +0.00007. Keep expected_f, stop tuning assign. The 3.7 points to the
   0.9903 blocking ceiling are in the matcher, concentrated in India.
 - Windows: pools are capped by `config.WORKERS` (4 on spawn, AMLC_WORKERS to override) or the run OOMs at pool startup; `train_guarded.sh` must use the venv (system python is pandas 3.x); `*.sh` pinned LF.
-- RTX 3050 was absent from the PCI bus (Code 45, torch.cuda False) this boot, so the reranker is unverified and unrunnable in practice -- CPU fallback turns its 11 min into ~4-7 h. Needs a reboot.
+- RTX 3050 is back (2026-09-26, 4 GB, torch.cuda True on system python 3.13 / torch 2.6+cu124).
+- laya branch: laya-multilingual (mmBERT-base) as a drop-in band reranker (src/gpu/laya_rr.py), picked
+  by meta.json kind in run_v2 --rerank. Verified on synthetic data only (dataset drive not mounted);
+  real A/B vs e5 on 30k OOF is the teammates' next step (docs/LAYA.md).
+- tests/test_features_v2.py fails at line 48 (Tamil skel_eq) on main too, under system python -- env, not code; unresolved.
 
 ## Architecture
 TSV → L0 ingest (parquet) → L1 contract → L2 normalize (translit, skeleton, legal form, FR/IN/US tables) → L3 multi-pass blocking ∪ (A name+addr, B address, C translit, D reverse) → L4 candidates parquet → L5 stage-1 GBDT → stage-2 GBDT (competition/peer) → L6 calibrate → assign (partition) → expected-F0.5 per entity → L7 write + validate.
@@ -61,7 +66,9 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - `src/stage2.py` — build(pairs, p1, R): entity shape, competition (claim_rank/gap), peers (peer1/2_sim)
 - `src/decide.py` — crossfit_calibrate, assign(none|hard|soft), select_threshold/expected_f, macro_f05 (vectorized), tune
 - `src/run_v2.py` — orchestrator; --ablate, --no-stage2, --rerank DIR --band lo hi, --train-only
-- `src/gpu/reranker.py` — e5-small cross-encoder (frozen word embeddings, bf16), train/score/bench, entities.txt leak guard
+- `src/gpu/reranker.py` — e5-small cross-encoder (frozen word embeddings, bf16), train/score/bench, entities.txt leak guard; valid_split, warmup_linear shared
+- `src/gpu/laya_rr.py` — laya reranker: PairEncoder (question prefix tokenized once), collate, fit_temperature, fetch/train/score/bench; saves a laya checkpoint + meta kind=laya
+- `src/gpu/__init__.py` — reranker_module(model_dir): meta.json kind -> gpu.reranker | gpu.laya_rr
 - `src/gpu/embed_knn.py` — measurement-only dense kNN: streamed shards, mmap .npy, kill < +0.002 F0.5 ceiling
 - `tests/` — test_decide, test_features_v2, test_embed_knn (assert scripts)
 - `tools/mlguard/` — Rust checker: src/checks.rs (run+watch rules), src/files.rs (submission/split), mlguard.toml (thresholds), fixtures/, train_guarded.sh
@@ -69,6 +76,7 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - `tools/eda/design_eda.py` — reproduces ANALYSIS §1; `tools/eda/skeleton_prototype.py` — cross-script name key
 - `docs/master-plan/*` — README (problem, concepts, requirements), ANALYSIS (facts, questions), HLD, LLD, SYSTEM_ARCHITECTURE, EXPERIMENT_PLAN, EDGE_CASES, DATA_SECURITY_AND_LEAKAGE, MODEL_SELECTION, MLGUARD
 - `docs/DATA_BRIEF.md`, `docs/EXPERIMENTS.md`, `docs/SUBMISSION.md` — Priyanshu's brief, experiment log, upload guide
+- `docs/LAYA.md` — laya reranker test guide for teammates (commands, measured speed, what to report)
 - `validate_submission.py` — official stdlib validator
 
 ## Conventions
@@ -93,6 +101,9 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - Reranker leak: disjoint S1 is not enough — S2/S3 records can repeat across rr training and the GBDT sample.
 - Never start another python job next to run_v2 on a 16 GB box (run 005 OOM).
 - Bash heredocs through the agent tool collapse `\` escapes — edit Python/Rust escapes with the Edit tool.
+- HF hub cache on Windows needs symlinks (WinError 1314 without Developer Mode): download with `local_dir=` (laya_rr.fetch).
+- laya zero-shot is useless for matching (unrelated pair -> 0.90 "same"); always fine-tune. laya.load silently falls back to CPU on OOM -- laya_rr raises instead.
+- laya reranker on the 3050: 369 pairs/s inference (compute-bound, ~80 tok/row), 153 train pairs/s, 2.75 GiB peak at top-8 layers.
 
 ## Decisions Log
 - 2026-09-25 — TOP_K=30 — F0.5 ceiling gain 30→50 is +0.002 for 35M pairs (Priyanshu, run 001)
@@ -101,8 +112,10 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - 2026-09-25 — Rust mlguard as an independent watcher + CI gate — survives Python OOM, fast on 10M ids
 - 2026-09-25 — GPU goes to a band reranker, not recall or trees — review: blocking backlog worth +0.005, LightGBM is 8 of 414 min
 - 2026-09-25 — run_v2.py beside run_pipeline.py, sharing its cache — no untested edits to the 6 h pipeline
+- 2026-09-26 — laya enters only as a band-reranker backend, fine-tuned, direct DecisionModel forward — 52M pairs x 7 ms is ~100 h; zero-shot useless; laya's predict() rebuilds the prompt per pair
 
 ## Changelog
+2026-09-26 | laya band reranker (branch laya) | src/gpu/{laya_rr,__init__,reranker}.py, src/run_v2.py, tests/{test,smoke}_laya_rr.py, docs/LAYA.md, requirements.txt, .gitignore | same pairs/text/leak guard as e5; backend chosen by meta.json kind
 2026-09-26 | runs 003–005 + guard fixes | src/runlog.py, src/run_v2.py, tools/mlguard/test_runlog.py, docs/EXPERIMENTS.md, GPU_PLAN.md | stop rolls back to best iter; NaN-safe summary; reranker gain held until leak audit
 2026-09-25 | v2 pipeline + GPU reranker + review fixes | src/{ingest,features_v2,stage2,decide,run_v2}.py, src/gpu/*, blocking.py, normalize.py, runlog.py, tools/mlguard/src/*, tests/*, docs/master-plan/GPU_PLAN.md | precision over recall; identical-output speedups; GPU job 2/4 dropped per review
 2026-09-25 | Master plan + mlguard + EDA | docs/master-plan/*, tools/mlguard/*, tools/eda/*, src/runlog.py, .github/workflows/mlguard.yml, AGENTS.md | plan built on measured data; checker gates runs in bg/CI/test

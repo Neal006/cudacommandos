@@ -191,13 +191,15 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage):
 
 
 def rerank_feature(model_dir, pairs, p1, L, R, band):
-    """Cross-encoder probability for pairs with band[0] <= p1 <= band[1]; -1 elsewhere."""
-    from gpu import reranker as RR
+    """Cross-encoder probability for pairs with band[0] <= p1 <= band[1]; -1 elsewhere.
+    The backend (e5 reranker or laya) comes from the model dir's meta.json `kind`."""
+    from gpu import reranker_module
+    RR = reranker_module(model_dir)
     m = (p1 >= band[0]) & (p1 <= band[1])
     out = np.full(len(pairs), -1.0)
     t = time.time()
     out[m] = RR.score(model_dir, RR.serialize(L, pairs.loc[m, "s1_id"]), RR.serialize(R, pairs.loc[m, "cand_id"]))
-    log(f"reranker: scored {int(m.sum()):,} band pairs ({m.mean():.1%}) in {time.time() - t:.0f}s")
+    log(f"reranker ({RR.__name__}): scored {int(m.sum()):,} band pairs ({m.mean():.1%}) in {time.time() - t:.0f}s")
     return out
 
 
@@ -369,7 +371,7 @@ if __name__ == "__main__":
     ap.add_argument("--train-only", action="store_true")
     ap.add_argument("--no-stage2", action="store_true")
     ap.add_argument("--ablate", action="store_true", help="also train on the pre-v2 features (baseline)")
-    ap.add_argument("--rerank", default=None, help="reranker model dir (src/gpu/reranker.py train)")
+    ap.add_argument("--rerank", default=None, help="reranker model dir (src/gpu/reranker.py or src/gpu/laya_rr.py train)")
     ap.add_argument("--band", type=float, nargs=2, default=(0.2, 0.8), help="stage-1 band sent to the reranker")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--run-dir", default=None)

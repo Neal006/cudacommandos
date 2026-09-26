@@ -98,25 +98,36 @@ def _batches(a, b, bs, order=None):
         yield ix, [a[j] for j in ix], [b[j] for j in ix]
 
 
+def valid_split(n, valid_frac, rng, groups=None):
+    """(train_idx, valid_idx). By entity when `groups` is given, so no entity straddles both."""
+    if groups is not None:
+        g = np.asarray(groups)
+        vg = set(rng.choice(np.unique(g), max(1, int(valid_frac * len(np.unique(g)))), replace=False))
+        va = np.fromiter((x in vg for x in g), bool, len(g))
+    else:
+        va = rng.random(n) < valid_frac
+    return np.where(~va)[0], np.where(va)[0]
+
+
+def warmup_linear(torch, opt, steps):
+    """5% linear warm-up, then linear decay to 0 at `steps`."""
+    warm = max(1, steps // 20)
+    return torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda s: min(1.0, (s + 1) / warm) * max(0.0, (steps - s) / max(1, steps - warm)))
+
+
 def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None, seed=7, groups=None):
     """Fine-tune on (a, b, y). The validation split is by entity (`groups`) when given."""
     torch, dev, amp = _torch()
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     a, b, y = np.asarray(a, dtype=object), np.asarray(b, dtype=object), np.asarray(y, dtype=np.float32)
-    if groups is not None:
-        g = np.asarray(groups)
-        vg = set(rng.choice(np.unique(g), max(1, int(valid_frac * len(np.unique(g)))), replace=False))
-        va = np.fromiter((x in vg for x in g), bool, len(g))
-    else:
-        va = rng.random(len(y)) < valid_frac
-    tr_idx, va_idx = np.where(~va)[0], np.where(va)[0]
+    tr_idx, va_idx = valid_split(len(y), valid_frac, rng, groups)
     tok, model = _load(BASE, train=True)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
     steps = epochs * math.ceil(len(tr_idx) / bs)
-    warm = max(1, steps // 20)
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / warm) * max(0.0, (steps - s) / max(1, steps - warm)))
+    sched = warmup_linear(torch, opt, steps)
     scaler = torch.amp.GradScaler("cuda") if amp == torch.float16 else None
     lossf = torch.nn.BCEWithLogitsLoss()
     log = None
@@ -153,7 +164,7 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out)
     tok.save_pretrained(out)
-    meta = dict(base=BASE, max_len=MAX_LEN, pairs=int(len(tr_idx)), valid_logloss=vl, valid_auc=auc,
+    meta = dict(kind="e5", base=BASE, max_len=MAX_LEN, pairs=int(len(tr_idx)), valid_logloss=vl, valid_auc=auc,
                 seconds=time.time() - t0, device=dev)
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     if groups is not None:  # run_v2 --rerank refuses a model that saw any of its entities
