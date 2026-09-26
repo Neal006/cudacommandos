@@ -62,6 +62,83 @@ def featurize(pairs, which, stats, extra=True):
     return X, L, R
 
 
+def _entity_chunks(pairs, target):
+    """Index ranges of ~`target` rows that never split a Source-1 entity.
+
+    Both add_rank_features and stage2's per-entity aggregates group by s1_id,
+    so a chunk boundary inside an entity would compute them over part of its
+    candidate list and silently produce different features than a whole-frame
+    run. Cutting only where s1_id changes keeps every per-entity statistic
+    identical to the unchunked path.
+    """
+    s = pairs["s1_id"].to_numpy()
+    starts = np.flatnonzero(np.r_[True, s[1:] != s[:-1]])      # first row of each entity
+    out, lo = [], 0
+    for b in starts[1:]:
+        if b - lo >= target:
+            out.append((lo, int(b)))
+            lo = int(b)
+    out.append((lo, len(pairs)))
+    return out
+
+
+def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibrator,
+                         chunk=4_000_000):
+    """Score the test pairs without materializing the whole feature matrix.
+
+    The unchunked path builds one frame of len(t_pairs) x n_features: at
+    1.73M entities x K=30 that is ~52M rows, 19 GB in float64, and stage 2's
+    concat doubles it. This box has 23.7 GB total, so that cannot run.
+
+    Two passes, because stage-2 features are NOT row-independent: `claim_rank`,
+    `claim_gap`, `n_claims` and `n_strong_claims` group by cand_id, and one
+    candidate can be claimed by entities in different chunks. Computing them
+    per chunk would quietly give a different answer than training saw.
+
+        pass 1  chunked features -> stage-1 score, keep only the scores
+        (global) stage-2 features over the complete (s1_id, cand_id, p1)
+        pass 2  chunked features again -> attach the global slice -> stage 2
+
+    Features are rebuilt in pass 2 rather than cached: 52M x 46 float64 is
+    19 GB on disk and the rebuild costs less than that write plus read.
+    """
+    p1p, p2p, p3p = D.source_paths("test")
+    L = F2.record_table(F2.load_records([p1p], set(t_pairs["s1_id"])))
+    R = F2.record_table(F2.load_records([p2p, p3p], set(t_pairs["cand_id"])))
+    bounds = _entity_chunks(t_pairs, chunk)
+    log(f"test scoring in {len(bounds)} entity-aligned chunks of ~{chunk:,} pairs")
+
+    def feats(sl):
+        X = F2.build_pair_features(sl, L, R, stats=stats, extra=True)
+        return F.add_rank_features(X, sl, "core_token_sort")
+
+    p = np.empty(len(t_pairs), dtype=np.float64)
+    for n, (lo, hi) in enumerate(bounds, 1):
+        sl = t_pairs.iloc[lo:hi]
+        X = feats(sl)
+        p[lo:hi] = predict(models1, X[feat1].to_numpy())
+        del X
+        gc.collect()
+        log(f"  stage-1 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
+
+    if models2 is not None:
+        # float32 halves this: 14 columns x 52M is 5.8 GB in float64.
+        S2f = S2.build(t_pairs, p, R).astype(np.float32)
+        log(f"stage-2 features built globally: {S2f.shape}")
+        for n, (lo, hi) in enumerate(bounds, 1):
+            sl = t_pairs.iloc[lo:hi]
+            X2 = pd.concat([feats(sl).reset_index(drop=True),
+                            S2f.iloc[lo:hi].reset_index(drop=True)], axis=1)
+            p[lo:hi] = predict(models2, X2[feat2].to_numpy())
+            del X2
+            gc.collect()
+            log(f"  stage-2 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
+        del S2f
+        gc.collect()
+
+    return calibrator.predict(p)
+
+
 def entity_f05(pairs, y, p, thr, truth_count):
     sel = pairs.assign(y=y, p=p)
     return decide.macro_f05(sel[sel["p"] >= thr], truth_count)
@@ -231,14 +308,20 @@ def main(a):
     del t1_, t2_, t3_
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
-    TX, TL, TR = featurize(t_pairs, "test", stats_for("test"), extra=True)
-    p = predict(models1, TX[feat1].to_numpy())
-    if models2 is not None:
+    needs_rerank = models2 is not None and "rr" in feat2
+    if needs_rerank:
+        # The reranker path still needs L/R in hand for the whole frame, so it
+        # keeps the original unchunked route. Only reachable with --rerank.
+        TX, TL, TR = featurize(t_pairs, "test", stats_for("test"), extra=True)
+        p = predict(models1, TX[feat1].to_numpy())
         TX2 = pd.concat([TX, S2.build(t_pairs, p, TR)], axis=1)
-        if "rr" in feat2:
-            TX2["rr"] = rerank_feature(a.rerank, t_pairs, p, TL, TR, a.band)
-        p = predict(models2, TX2[feat2].to_numpy())
-    tdf = t_pairs[["s1_id", "cand_id"]].assign(p=calibrator.predict(p))
+        TX2["rr"] = rerank_feature(a.rerank, t_pairs, p, TL, TR, a.band)
+        p = calibrator.predict(predict(models2, TX2[feat2].to_numpy()))
+    else:
+        p = predict_test_chunked(t_pairs, stats_for("test"),
+                                 models1, feat1, models2, feat2, calibrator,
+                                 chunk=C.TEST_CHUNK_PAIRS)
+    tdf = t_pairs[["s1_id", "cand_id"]].assign(p=p)
     tsel = decide.apply(tdf, best)
     matches = tsel.groupby("s1_id")["cand_id"].apply(set).to_dict()
     cand_sets = t_pairs.groupby("s1_id")["cand_id"].apply(set).to_dict()

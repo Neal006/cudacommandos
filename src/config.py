@@ -171,6 +171,13 @@ N_FOLDS = 5
 # above 0.5. Tuned on out-of-fold predictions; this is only the starting point.
 DEFAULT_THRESHOLD = 0.70
 
+# Pairs per chunk when scoring the test set. The unchunked path builds one
+# frame of 1.73M entities x K=30 = ~52M rows: 19 GB in float64, doubled by
+# stage 2's concat, against 23.7 GB of RAM on this box. Chunks are cut only
+# where s1_id changes, so every per-entity statistic matches the whole-frame
+# result. Lower it if the test phase still runs tight.
+TEST_CHUNK_PAIRS = int(os.environ.get("AMLC_TEST_CHUNK") or 4_000_000)
+
 # --- team S3 bucket (cross-account; owned by another team member's account) ---
 AWS_REGION = "ap-south-1"
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "amlc")
