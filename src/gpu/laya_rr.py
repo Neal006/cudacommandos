@@ -37,6 +37,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C  # noqa: E402
+from gpu import ft_data as FD  # noqa: E402
+from gpu import ft_train as FT  # noqa: E402
 from gpu import reranker as RR  # noqa: E402
 
 serialize = RR.serialize          # identical record text for both rerankers
@@ -51,6 +53,7 @@ NOUL = 2                          # laya.common.QTYPES["noul"]
 REC_MAX = 64                      # tokens per record, "record A: " label included
 T_MIN, T_MAX = 0.5, 5.0           # = laya.common.TEMP_MIN/MAX: laya.load clamps to this, so fit inside it
 TRAIN_LAYERS = 8                  # top encoder layers fine-tuned by default (4 GB GPU)
+FULL_LR, LORA_LR = 3e-5, 2e-4     # default lr: partial unfreeze vs LoRA adapters
 BAND_PAIRS_TEST = 620_000         # ~1.2% of the 52M test candidates (EXPERIMENTS: 0.2-0.8 band)
 
 
@@ -209,21 +212,53 @@ def _save(model, base, out, cfg, t):
     save_file(sd, str(out / "model.safetensors"))
 
 
-def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=3e-5, valid_frac=0.02, run_dir=None, seed=7,
-          groups=None, train_layers=TRAIN_LAYERS):
-    """Fine-tune laya's noul decision on (a, b, y); valid split by entity (`groups`) when given."""
+def _epoch_batches(tr_idx, bs, rng, keys=None):
+    """Row-index batches for one epoch: shuffled, or group-contiguous when the listwise loss needs keys."""
+    order = rng.permutation(tr_idx)
+    if keys is None:
+        return [order[i:i + bs] for i in range(0, len(order), bs)]
+    return list(FT.group_batches(keys, order, bs))
+
+
+def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02, run_dir=None, seed=7,
+          groups=None, train_layers=TRAIN_LAYERS, augment=0.0, lora=0, listwise=0.0, group_keys=None,
+          extra_meta=None):
+    """Fine-tune laya's noul decision on (a, b, y); valid split by entity (`groups`) when given.
+    Options (docs/FINETUNE.md): augment = fraction of augmented train rows (ft_data), lora = LoRA rank over
+    all layers instead of the top-`train_layers` unfreeze (ft_train), listwise = weight of the listwise
+    loss added to BCE, over `group_keys` (cand_id: the S1 candidates of one S2/S3 record compete)."""
     torch, dev, amp = RR._torch()
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     a, b, y = np.asarray(a, dtype=object), np.asarray(b, dtype=object), np.asarray(y, dtype=np.float32)
+    if listwise > 0 and group_keys is None:
+        raise ValueError("the listwise loss needs group_keys (a cand_id column in the pairs)")
+    keys = None if group_keys is None else np.asarray(group_keys, dtype=object)
     tr_idx, va_idx = RR.valid_split(len(y), valid_frac, rng, groups)
+    if augment > 0:                               # own rng: the default path's RNG stream is unchanged
+        n0 = len(a)
+        a, b, y, _, tr_idx = FD.augment_train(a, b, y, None, tr_idx, augment, np.random.default_rng(seed + 1))
+        if keys is not None:                      # augmented copies are singleton groups (plain BCE)
+            keys = FT.singleton_keys(keys, len(a) - n0)
     base = Path(base)
-    tok, model, cfg, _ = _load(base, train_layers=train_layers)
+    tok, model, cfg, _ = _load(base, train_layers=None if lora else train_layers)
+    if lora:                                      # checkpointing: 1.9 GiB instead of 3.8 at bs 32, ~10% slower
+        FT.apply_lora(model, lora, checkpointing=True)
+    lr = lr or (LORA_LR if lora else FULL_LR)
     enc = PairEncoder(tok, cfg.get("head_max_len", 256))
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
-    steps = epochs * math.ceil(len(tr_idx) / bs)
+    plan = [_epoch_batches(tr_idx, bs, rng, keys if listwise > 0 else None) for _ in range(epochs)]
+    steps = sum(map(len, plan))
     sched = RR.warmup_linear(torch, opt, steps)
+    oversized = sum(len(ix) > bs for batches in plan for ix in batches)
+    if oversized:                                 # a listwise group bigger than bs is one batch: VRAM spike
+        print(f"laya reranker: WARNING {oversized} batch(es) exceed bs {bs} (one group each); "
+              f"raise --bs if VRAM allows", flush=True)
+    if lora:
+        tuned = f"LoRA r={lora} on all layers"
+    else:
+        tuned = f"top {train_layers} layers" if train_layers >= 0 else "all layers"
     scaler = torch.amp.GradScaler("cuda") if amp == torch.float16 else None
     lossf = torch.nn.BCEWithLogitsLoss()
     log = None
@@ -232,13 +267,16 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=3e-5, valid_frac=0.02
         log = RunLog(run_dir)
     print(f"laya reranker: {len(tr_idx):,} train / {len(va_idx):,} valid pairs, {steps} steps, device {dev}, "
           f"amp {amp}, trainable {sum(p.numel() for p in params)/1e6:.1f}M params "
-          f"(top {train_layers if train_layers >= 0 else 'all'} layers + head)", flush=True)
+          f"({tuned} + head), lr {lr:g}, augment {augment:g}, listwise {listwise:g}", flush=True)
     step, t0, run_loss = 0, time.time(), []
-    for _ in range(epochs):
+    for batches in plan:
         model.train()
-        for ix, xa, xb in RR._batches(a, b, bs, rng.permutation(tr_idx)):
-            batch = collate(enc.encode(xa, xb), enc.markers, tok.pad_token_id)
-            loss = lossf(_logit_diff(model, batch, dev, amp), torch.from_numpy(y[ix]).to(dev))
+        for ix in batches:
+            batch = collate(enc.encode(a[ix], b[ix]), enc.markers, tok.pad_token_id)
+            z_b, tgt = _logit_diff(model, batch, dev, amp), torch.from_numpy(y[ix]).to(dev)
+            loss = lossf(z_b, tgt)
+            if listwise > 0:
+                loss = loss + listwise * FT.listwise_loss(z_b, keys[ix], tgt)
             opt.zero_grad(set_to_none=True)
             if scaler:
                 scaler.scale(loss).backward()
@@ -262,6 +300,8 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=3e-5, valid_frac=0.02
                 if log:
                     log.tick(fold=0, iter=step, train_loss=tl, valid_loss=vl)
                 model.train()
+    if lora:
+        FT.merge_lora(model)                      # validate and save exactly what will be served
     z = _diffs(tok, model, enc, a[va_idx], b[va_idx])
     t = fit_temperature(z, y[va_idx]) if len(va_idx) else 1.0
     vl, auc = _metrics(z, y[va_idx], t)
@@ -271,7 +311,8 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=3e-5, valid_frac=0.02
     meta = dict(kind="laya", base=str(base), base_repo=BASE_REPO, base_revision=BASE_REVISION,
                 laya_version=laya.__version__,
                 question=QUESTION["ins"], rec_max=REC_MAX, train_layers=train_layers, pairs=int(len(tr_idx)),
-                temperature=t, valid_logloss=vl, valid_auc=auc, seconds=time.time() - t0, device=dev)
+                temperature=t, valid_logloss=vl, valid_auc=auc, seconds=time.time() - t0, device=dev,
+                lr=lr, augment=augment, lora=lora, listwise=listwise, **(extra_meta or {}))
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     if groups is not None:  # run_v2 --rerank refuses a model that saw any of its entities
         (out / "entities.txt").write_text("\n".join(sorted(set(map(str, groups)))), encoding="utf-8")
@@ -289,11 +330,13 @@ def _synthetic(n, seed=0):
     return np.array([mk() for _ in range(n)], dtype=object), np.array([mk() for _ in range(n)], dtype=object)
 
 
-def bench(model_dir=BASE_DIR, n=5000, train_steps=0, bs=32, train_layers=TRAIN_LAYERS):
+def bench(model_dir=BASE_DIR, n=5000, train_steps=0, bs=32, train_layers=TRAIN_LAYERS, lora=0, grad_ckpt=False):
     """Inference pairs/s (and optionally train pairs/s) plus peak VRAM on synthetic records."""
     torch, dev, amp = RR._torch()
     a, b = _synthetic(n)
-    tok, model, cfg, _ = _load(model_dir, train_layers=train_layers if train_steps else None)
+    tok, model, cfg, _ = _load(model_dir, train_layers=train_layers if train_steps and not lora else None)
+    if train_steps and lora:
+        FT.apply_lora(model, lora, checkpointing=grad_ckpt)
     enc = PairEncoder(tok, cfg.get("head_max_len", 256))
     print(f"prefix {len(enc.prefix)} tokens, max row {enc.max_len} tokens", flush=True)
     if dev == "cuda":
@@ -333,27 +376,44 @@ if __name__ == "__main__":
     f.add_argument("--out", default=str(BASE_DIR))
     f.add_argument("--revision", default=BASE_REVISION, help="commit SHA; 'main' for the latest")
     t = sub.add_parser("train")
-    t.add_argument("--exclude", required=True, help="folds.tsv of the GBDT run (its entities are excluded)")
+    src = t.add_mutually_exclusive_group(required=True)
+    src.add_argument("--exclude", help="folds.tsv of the GBDT run (its entities are excluded)")
+    src.add_argument("--pairs", nargs="+", help="prebuilt pair parquet(s), e.g. ft_data.py band output")
     t.add_argument("--entities", type=int, default=40000)
     t.add_argument("--out", required=True)
     t.add_argument("--base", default=str(BASE_DIR), help="laya checkpoint dir to start from (fetched if missing)")
     t.add_argument("--epochs", type=int, default=1)
     t.add_argument("--bs", type=int, default=32)
-    t.add_argument("--lr", type=float, default=3e-5)
+    t.add_argument("--lr", type=float, default=None, help=f"default {FULL_LR:g}, or {LORA_LR:g} with --lora")
     t.add_argument("--train-layers", type=int, default=TRAIN_LAYERS, help="-1 = all but the embedding table")
+    t.add_argument("--augment", type=float, default=0.0, help="option 2: fraction of augmented train rows to add")
+    t.add_argument("--lora", type=int, default=0, help="option 3: LoRA rank over all layers (e.g. 16); 0 = off")
+    t.add_argument("--listwise", type=float, default=0.0, help="option 4: weight of the listwise loss; 0 = off")
+    t.add_argument("--group-by", default="cand_id", help="listwise groups (cand_id: records compete for one S1)")
     t.add_argument("--run-dir", default=None)
     bn = sub.add_parser("bench")
     bn.add_argument("--model", default=str(BASE_DIR))
     bn.add_argument("--train", action="store_true", help="also time 30 training steps")
     bn.add_argument("--bs", type=int, default=32)
     bn.add_argument("--train-layers", type=int, default=TRAIN_LAYERS)
+    bn.add_argument("--lora", type=int, default=0, help="time LoRA training at this rank instead")
+    bn.add_argument("--grad-ckpt", action="store_true", help="with --lora: gradient checkpointing")
     a = ap.parse_args()
     if a.cmd == "fetch":
         fetch(a.repo, a.out, a.revision)
     elif a.cmd == "train":
-        ex = pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"]
-        d = RR.make_training_pairs(ex, a.entities)
+        if a.pairs:
+            d = FD.load_pairs(a.pairs)
+        else:
+            d = RR.make_training_pairs(pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"], a.entities)
+        if a.listwise > 0 and (a.group_by not in d.columns or d[a.group_by].isna().any()):
+            raise SystemExit(f"--listwise groups by {a.group_by!r}, which some or all of these pairs lack; "
+                             f"build them with `python src/gpu/ft_data.py band` (make_training_pairs has no cand_id)")
         train(d["a"], d["b"], d["y"], a.out, base=a.base, epochs=a.epochs, bs=a.bs, lr=a.lr,
-              run_dir=a.run_dir, groups=d["s1_id"], train_layers=a.train_layers)
+              run_dir=a.run_dir, groups=d["s1_id"], train_layers=a.train_layers, augment=a.augment,
+              lora=a.lora, listwise=a.listwise,
+              group_keys=d[a.group_by].to_numpy() if a.group_by in d.columns else None,
+              extra_meta=dict(pair_files=a.pairs or [], group_by=a.group_by))
     else:
-        bench(a.model, train_steps=30 if a.train else 0, bs=a.bs, train_layers=a.train_layers)
+        bench(a.model, train_steps=30 if a.train else 0, bs=a.bs, train_layers=a.train_layers, lora=a.lora,
+              grad_ckpt=a.grad_ckpt)

@@ -16,6 +16,7 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
 - data-free tests: `python tests/test_decide.py && python tests/test_features_v2.py` (+ `tests/test_embed_knn.py` needs torch)
 - GPU reranker: `python src/gpu/reranker.py train --exclude runs/<id>/folds.tsv --entities 40000 --out models/rr_e5s`
 - laya reranker (docs/LAYA.md): `python src/gpu/laya_rr.py fetch|train|bench`; tests `python tests/test_laya_rr.py` (data-free), `python tests/smoke_laya_rr.py` (GPU, synthetic)
+- fine-tuning options (docs/FINETUNE.md): `ft_data.py band|eval`, `laya_rr.py train --pairs P --augment 0.5 --lora 16 --listwise 1`, `distill.py`; tests `tests/test_finetune.py` (CPU), `tests/smoke_finetune.py` (GPU)
 
 ## Current State & Focus
 - Works: word TF-IDF blocking (per country, K=30, recall ceiling 0.95), ~30 rapidfuzz features, LightGBM GroupKFold, global threshold, output writer (branch pipeline/entity-resolution).
@@ -46,6 +47,9 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
   by meta.json kind in run_v2 --rerank. Verified on synthetic data only (dataset drive not mounted);
   real A/B vs e5 on 30k OOF is the teammates' next step (docs/LAYA.md).
 - tests/test_features_v2.py fails at line 48 (Tamil skel_eq) on main too, under system python -- env, not code; unresolved.
+- finetune branch (on laya): 5 reranker fine-tuning options -- band-matched pairs, in-data augmentation,
+  LoRA all layers, listwise loss by cand_id, laya->e5 distillation -- plus a leak-checked shared eval.
+  Synthetic-only verification; option 1 never ran on real data. Grid + report format in docs/FINETUNE.md.
 
 ## Architecture
 TSV → L0 ingest (parquet) → L1 contract → L2 normalize (translit, skeleton, legal form, FR/IN/US tables) → L3 multi-pass blocking ∪ (A name+addr, B address, C translit, D reverse) → L4 candidates parquet → L5 stage-1 GBDT → stage-2 GBDT (competition/peer) → L6 calibrate → assign (partition) → expected-F0.5 per entity → L7 write + validate.
@@ -69,6 +73,10 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - `src/gpu/reranker.py` — e5-small cross-encoder (frozen word embeddings, bf16), train/score/bench, entities.txt leak guard; valid_split, warmup_linear shared
 - `src/gpu/laya_rr.py` — laya reranker: PairEncoder (question prefix tokenized once), collate, fit_temperature, fetch/train/score/bench; saves a laya checkpoint + meta kind=laya
 - `src/gpu/__init__.py` — reranker_module(model_dir): meta.json kind -> gpu.reranker | gpu.laya_rr
+- `src/gpu/ft_data.py` — parse/render (serialize text), AUG_OPS, augment_train, select_band, band_pairs, load_pairs, eval_leak/evaluate; CLI band|eval
+- `src/gpu/ft_train.py` — apply_lora/merge_lora (peft, Wqkv/Wo/Wi, checkpointing), singleton_keys, group_batches, listwise_loss
+- `src/gpu/distill.py` — soft_targets, unseen_by_teacher, union_entities, distill (-> e5 dir via reranker.train y_eval)
+- `docs/FINETUNE.md` — fine-tuning runbook: A/B grid, measured speed/VRAM, what to report
 - `src/gpu/embed_knn.py` — measurement-only dense kNN: streamed shards, mmap .npy, kill < +0.002 F0.5 ceiling
 - `tests/` — test_decide, test_features_v2, test_embed_knn (assert scripts)
 - `tools/mlguard/` — Rust checker: src/checks.rs (run+watch rules), src/files.rs (submission/split), mlguard.toml (thresholds), fixtures/, train_guarded.sh
@@ -104,6 +112,11 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - HF hub cache on Windows needs symlinks (WinError 1314 without Developer Mode): download with `local_dir=` (laya_rr.fetch).
 - laya zero-shot is useless for matching (unrelated pair -> 0.90 "same"); always fine-tune. laya.load silently falls back to CPU on OOM -- laya_rr raises instead.
 - laya reranker on the 3050: 369 pairs/s inference (compute-bound, ~80 tok/row), 153 train pairs/s, 2.75 GiB peak at top-8 layers.
+- LoRA without grad checkpointing peaks 3.8 GiB at bs 32 and SPILLS to shared RAM on 4 GB (29 pairs/s); with it 1.9 GiB, 67 pairs/s.
+- peft builds LoRA dropout in train mode even on an eval model (apply_lora restores the mode).
+- pandas factorize hashes object strings as C strings: keys starting with "\x00" all collide; NaN keys get code -1,
+  which torch indexing reads as the LAST row -- ft_train._codes rejects both.
+- transformers 4.57 warns "incorrect regex pattern" loading a saved e5 tokenizer: spurious, ids verified identical.
 
 ## Decisions Log
 - 2026-09-25 — TOP_K=30 — F0.5 ceiling gain 30→50 is +0.002 for 35M pairs (Priyanshu, run 001)
@@ -114,7 +127,11 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - 2026-09-25 — run_v2.py beside run_pipeline.py, sharing its cache — no untested edits to the 6 h pipeline
 - 2026-09-26 — laya enters only as a band-reranker backend, fine-tuned, direct DecisionModel forward — 52M pairs x 7 ms is ~100 h; zero-shot useless; laya's predict() rebuilds the prompt per pair
 
+- 2026-09-26 — Fine-tuning = SFT variants of the band reranker only; no RL/DPO (exact labels: proper-score RL optimum is BCE), no embedder, no LLM — cheapest levers on the precision gap
+- 2026-09-26 — A/B options on one frozen held-out file (ft_data eval) + run_v2 OOF — per-run valid splits are different draws
+
 ## Changelog
+2026-09-26 | fine-tuning options 1-5 (branch finetune) | src/gpu/{ft_data,ft_train,distill,laya_rr,reranker}.py, tests/{test,smoke}_finetune.py, docs/FINETUNE.md | defaults unchanged (RNG stream verified); leak guards on distill/eval/listwise
 2026-09-26 | laya band reranker (branch laya) | src/gpu/{laya_rr,__init__,reranker}.py, src/run_v2.py, tests/{test,smoke}_laya_rr.py, docs/LAYA.md, requirements.txt, .gitignore | same pairs/text/leak guard as e5; backend chosen by meta.json kind
 2026-09-26 | runs 003–005 + guard fixes | src/runlog.py, src/run_v2.py, tools/mlguard/test_runlog.py, docs/EXPERIMENTS.md, GPU_PLAN.md | stop rolls back to best iter; NaN-safe summary; reranker gain held until leak audit
 2026-09-25 | v2 pipeline + GPU reranker + review fixes | src/{ingest,features_v2,stage2,decide,run_v2}.py, src/gpu/*, blocking.py, normalize.py, runlog.py, tools/mlguard/src/*, tests/*, docs/master-plan/GPU_PLAN.md | precision over recall; identical-output speedups; GPU job 2/4 dropped per review

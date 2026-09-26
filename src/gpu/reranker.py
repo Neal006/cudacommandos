@@ -116,13 +116,20 @@ def warmup_linear(torch, opt, steps):
         opt, lambda s: min(1.0, (s + 1) / warm) * max(0.0, (steps - s) / max(1, steps - warm)))
 
 
-def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None, seed=7, groups=None):
-    """Fine-tune on (a, b, y). The validation split is by entity (`groups`) when given."""
+def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None, seed=7, groups=None,
+          augment=0.0, y_eval=None, extra_meta=None):
+    """Fine-tune on (a, b, y). The validation split is by entity (`groups`) when given.
+    `y` may be soft targets (distillation); metrics then use the hard labels `y_eval`.
+    `augment` > 0 appends that fraction of augmented TRAIN rows (gpu/ft_data.py), never valid rows."""
     torch, dev, amp = _torch()
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     a, b, y = np.asarray(a, dtype=object), np.asarray(b, dtype=object), np.asarray(y, dtype=np.float32)
+    y_ev = y if y_eval is None else np.asarray(y_eval, dtype=np.float32)
     tr_idx, va_idx = valid_split(len(y), valid_frac, rng, groups)
+    if augment > 0:                               # own rng: the default path's RNG stream is unchanged
+        from gpu.ft_data import augment_train
+        a, b, y, _, tr_idx = augment_train(a, b, y, None, tr_idx, augment, np.random.default_rng(seed + 1))
     tok, model = _load(BASE, train=True)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
@@ -153,19 +160,19 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
             run_loss.append(loss.item())
             step += 1
             if step % 200 == 0 or step == steps:
-                vl, _ = _eval(tok, model, a, b, y, va_idx[:4000])
+                vl, _ = _eval(tok, model, a, b, y_ev, va_idx[:4000])
                 tl = float(np.mean(run_loss[-200:]))
                 print(f"  step {step}/{steps}  train {tl:.4f}  valid {vl:.4f}  {step*bs/(time.time()-t0):,.0f} pairs/s", flush=True)
                 if log:
                     log.tick(fold=0, iter=step, train_loss=tl, valid_loss=vl)
                 model.train()
-    vl, auc = _eval(tok, model, a, b, y, va_idx)
+    vl, auc = _eval(tok, model, a, b, y_ev, va_idx)
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out)
     tok.save_pretrained(out)
     meta = dict(kind="e5", base=BASE, max_len=MAX_LEN, pairs=int(len(tr_idx)), valid_logloss=vl, valid_auc=auc,
-                seconds=time.time() - t0, device=dev)
+                seconds=time.time() - t0, device=dev, augment=augment, **(extra_meta or {}))
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     if groups is not None:  # run_v2 --rerank refuses a model that saw any of its entities
         (out / "entities.txt").write_text("\n".join(sorted(set(map(str, groups)))), encoding="utf-8")
@@ -221,18 +228,25 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("train")
-    t.add_argument("--exclude", required=True, help="folds.tsv of the GBDT run (its entities are excluded)")
+    src = t.add_mutually_exclusive_group(required=True)
+    src.add_argument("--exclude", help="folds.tsv of the GBDT run (its entities are excluded)")
+    src.add_argument("--pairs", nargs="+", help="prebuilt pair parquet(s), e.g. ft_data.py band output")
     t.add_argument("--entities", type=int, default=40000)
     t.add_argument("--out", required=True)
     t.add_argument("--epochs", type=int, default=1)
     t.add_argument("--bs", type=int, default=64)
+    t.add_argument("--augment", type=float, default=0.0, help="fraction of augmented train rows to add")
     t.add_argument("--run-dir", default=None)
     bn = sub.add_parser("bench")
     bn.add_argument("--model", default=BASE)
     a = ap.parse_args()
     if a.cmd == "train":
-        ex = pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"]
-        d = make_training_pairs(ex, a.entities)
-        train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, run_dir=a.run_dir, groups=d["s1_id"])
+        if a.pairs:
+            from gpu.ft_data import load_pairs
+            d = load_pairs(a.pairs)
+        else:
+            d = make_training_pairs(pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"], a.entities)
+        train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, run_dir=a.run_dir, groups=d["s1_id"],
+              augment=a.augment)
     else:
         bench(a.model)
