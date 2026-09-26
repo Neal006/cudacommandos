@@ -1,0 +1,116 @@
+    [14:23:48] fitting vocabulary on 1,000,000 of 10,320,219 documents
+    [14:23:55] vocabulary: 126,018 tokens (max_df=0.01, min_df=3) in 7s
+    [14:24:03] India index transform 500,000/4,133,346 (4s elapsed)
+    [14:24:07] India index transform 1,000,000/4,133,346 (8s elapsed)
+    [14:24:10] India index transform 1,500,000/4,133,346 (11s elapsed)
+    [14:24:14] India index transform 2,000,000/4,133,346 (15s elapsed)
+    [14:24:17] India index transform 2,500,000/4,133,346 (18s elapsed)
+    [14:24:21] India index transform 3,000,000/4,133,346 (21s elapsed)
+    [14:24:24] India index transform 3,500,000/4,133,346 (25s elapsed)
+    [14:24:27] India index transform 4,000,000/4,133,346 (28s elapsed)
+    [14:24:28] India index transform 4,133,346/4,133,346 (29s elapsed)
+    [14:24:29] India: scoring 16,071 queries against 4,133,346 records
+    [14:24:34] India: 2,000/16,071  (373 q/s, ETA 0.6 min)
+    [14:25:00] India: 12,000/16,071  (385 q/s, ETA 0.2 min)
+    [14:25:10] India: done in 0.7 min
+    [14:25:13] US index transform 500,000/6,186,873 (3s elapsed)
+    [14:25:16] US index transform 1,000,000/6,186,873 (5s elapsed)
+    [14:25:19] US index transform 1,500,000/6,186,873 (8s elapsed)
+    [14:25:21] US index transform 2,000,000/6,186,873 (11s elapsed)
+    [14:25:24] US index transform 2,500,000/6,186,873 (13s elapsed)
+    [14:25:27] US index transform 3,000,000/6,186,873 (16s elapsed)
+    [14:25:29] US index transform 3,500,000/6,186,873 (19s elapsed)
+    [14:25:32] US index transform 4,000,000/6,186,873 (21s elapsed)
+    [14:25:35] US index transform 4,500,000/6,186,873 (24s elapsed)
+    [14:25:37] US index transform 5,000,000/6,186,873 (27s elapsed)
+    [14:25:40] US index transform 5,500,000/6,186,873 (29s elapsed)
+    [14:25:43] US index transform 6,000,000/6,186,873 (32s elapsed)
+    [14:25:44] US index transform 6,186,873/6,186,873 (33s elapsed)
+    [14:25:44] US: scoring 23,929 queries against 6,186,873 records
+    [14:25:48] US: 2,000/23,929  (621 q/s, ETA 0.6 min)
+    [14:26:04] US: 12,000/23,929  (609 q/s, ETA 0.3 min)
+    [14:26:20] US: 22,000/23,929  (611 q/s, ETA 0.1 min)
+    [14:26:24] US: done in 0.7 min
+laya reranker: 514,335 train / 10,677 valid pairs, 16073 steps, device cuda, amp torch.bfloat16, trainable 55.1M params (top 8 layers + head)
+  step 200/16073  train 3.3664  valid 0.3422  72 pairs/s
+  step 400/16073  train 0.2704  valid 0.1730  70 pairs/s
+  step 600/16073  train 0.1880  valid 0.1339  70 pairs/s
+  step 800/16073  train 0.1658  valid 0.1456  69 pairs/s
+  step 1000/16073  train 0.1477  valid 0.1355  69 pairs/s
+  step 1200/16073  train 0.1299  valid 0.1453  68 pairs/s
+  step 1400/16073  train 0.1231  valid 0.1016  68 pairs/s
+  step 1600/16073  train 0.1168  valid 0.1307  68 pairs/s
+  step 1800/16073  train 0.0966  valid 0.1587  68 pairs/s
+  step 2000/16073  train 0.0925  valid 0.1202  68 pairs/s
+  step 2200/16073  train 0.0864  valid 0.0815  68 pairs/s
+  step 2400/16073  train 0.1015  valid 0.0694  67 pairs/s
+  step 2600/16073  train 0.0824  valid 0.0774  67 pairs/s
+  step 2800/16073  train 0.0885  valid 0.0711  67 pairs/s
+  step 3000/16073  train 0.0793  valid 0.0769  67 pairs/s
+  step 3200/16073  train 0.0637  valid 0.0678  67 pairs/s
+  step 3400/16073  train 0.0792  valid 0.0677  67 pairs/s
+  step 3600/16073  train 0.0763  valid 0.0699  67 pairs/s
+  step 3800/16073  train 0.0648  valid 0.0871  67 pairs/s
+  step 4000/16073  train 0.0614  valid 0.0785  67 pairs/s
+  step 4200/16073  train 0.0714  valid 0.0748  67 pairs/s
+  step 4400/16073  train 0.0612  valid 0.0740  67 pairs/s
+  step 4600/16073  train 0.0775  valid 0.0546  67 pairs/s
+  step 4800/16073  train 0.0637  valid 0.0622  67 pairs/s
+  step 5000/16073  train 0.0616  valid 0.0566  67 pairs/s
+  step 5200/16073  train 0.0710  valid 0.0585  66 pairs/s
+  step 5400/16073  train 0.0577  valid 0.0603  66 pairs/s
+  step 5600/16073  train 0.0668  valid 0.0623  66 pairs/s
+  step 5800/16073  train 0.0553  valid 0.0567  66 pairs/s
+  step 6000/16073  train 0.0607  valid 0.0635  66 pairs/s
+  step 6200/16073  train 0.0584  valid 0.0558  66 pairs/s
+  step 6400/16073  train 0.0501  valid 0.0538  66 pairs/s
+  step 6600/16073  train 0.0539  valid 0.0558  66 pairs/s
+  step 6800/16073  train 0.0588  valid 0.0521  66 pairs/s
+  step 7000/16073  train 0.0579  valid 0.0622  66 pairs/s
+  step 7200/16073  train 0.0533  valid 0.0457  66 pairs/s
+  step 7400/16073  train 0.0591  valid 0.0563  66 pairs/s
+  step 7600/16073  train 0.0539  valid 0.0537  66 pairs/s
+  step 7800/16073  train 0.0518  valid 0.0522  66 pairs/s
+  step 8000/16073  train 0.0576  valid 0.0495  66 pairs/s
+  step 8200/16073  train 0.0486  valid 0.0611  66 pairs/s
+  step 8400/16073  train 0.0485  valid 0.0522  66 pairs/s
+  step 8600/16073  train 0.0493  valid 0.0576  66 pairs/s
+  step 8800/16073  train 0.0505  valid 0.0486  66 pairs/s
+  step 9000/16073  train 0.0456  valid 0.0511  66 pairs/s
+  step 9200/16073  train 0.0435  valid 0.0468  66 pairs/s
+  step 9400/16073  train 0.0411  valid 0.0525  66 pairs/s
+  step 9600/16073  train 0.0422  valid 0.0444  66 pairs/s
+  step 9800/16073  train 0.0464  valid 0.0433  66 pairs/s
+  step 10000/16073  train 0.0451  valid 0.0471  66 pairs/s
+  step 10200/16073  train 0.0533  valid 0.0473  66 pairs/s
+  step 10400/16073  train 0.0420  valid 0.0458  66 pairs/s
+  step 10600/16073  train 0.0444  valid 0.0472  66 pairs/s
+  step 10800/16073  train 0.0440  valid 0.0418  66 pairs/s
+  step 11000/16073  train 0.0438  valid 0.0461  66 pairs/s
+  step 11200/16073  train 0.0441  valid 0.0415  66 pairs/s
+  step 11400/16073  train 0.0468  valid 0.0598  66 pairs/s
+  step 11600/16073  train 0.0464  valid 0.0417  66 pairs/s
+  step 11800/16073  train 0.0474  valid 0.0391  66 pairs/s
+  step 12000/16073  train 0.0419  valid 0.0349  66 pairs/s
+  step 12200/16073  train 0.0422  valid 0.0396  66 pairs/s
+  step 12400/16073  train 0.0434  valid 0.0415  66 pairs/s
+  step 12600/16073  train 0.0425  valid 0.0388  66 pairs/s
+  step 12800/16073  train 0.0367  valid 0.0391  66 pairs/s
+  step 13000/16073  train 0.0445  valid 0.0387  66 pairs/s
+  step 13200/16073  train 0.0458  valid 0.0373  66 pairs/s
+  step 13400/16073  train 0.0333  valid 0.0366  66 pairs/s
+  step 13600/16073  train 0.0419  valid 0.0372  66 pairs/s
+  step 13800/16073  train 0.0498  valid 0.0355  66 pairs/s
+  step 14000/16073  train 0.0433  valid 0.0368  66 pairs/s
+  step 14200/16073  train 0.0406  valid 0.0346  66 pairs/s
+  step 14400/16073  train 0.0445  valid 0.0375  66 pairs/s
+  step 14600/16073  train 0.0409  valid 0.0344  66 pairs/s
+  step 14800/16073  train 0.0348  valid 0.0361  66 pairs/s
+  step 15000/16073  train 0.0390  valid 0.0361  66 pairs/s
+  step 15200/16073  train 0.0354  valid 0.0362  66 pairs/s
+  step 15400/16073  train 0.0327  valid 0.0367  66 pairs/s
+  step 15600/16073  train 0.0374  valid 0.0360  66 pairs/s
+  step 15800/16073  train 0.0358  valid 0.0363  66 pairs/s
+  step 16000/16073  train 0.0410  valid 0.0368  66 pairs/s
+  step 16073/16073  train 0.0385  valid 0.0368  66 pairs/s
+laya reranker saved -> models\rr_laya  T 1.429  valid logloss 0.0364  AUC 0.9989

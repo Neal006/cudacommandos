@@ -1,0 +1,60 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\.venv\Lib\site-packages\huggingface_hub\file_download.py:149: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in E:\uncensoredai_setup\downloads\huggingface\hub\models--intfloat--multilingual-e5-small. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\.venv\Lib\site-packages\huggingface_hub\file_download.py:149: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in E:\uncensoredai_setup\downloads\huggingface\hub. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 12623.51it/s]
+[transformers] [1mBertForSequenceClassification LOAD REPORT[0m from: intfloat/multilingual-e5-small
+Key               | Status  | 
+------------------+---------+-
+classifier.bias   | MISSING | 
+classifier.weight | MISSING | 
+
+Notes:
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+reranker: 514,335 train / 10,677 valid pairs, 8037 steps, device cuda, amp torch.bfloat16, trainable 21.6M params
+  step 200/8037  train 0.5201  valid 0.2256  424 pairs/s
+  step 400/8037  train 0.1613  valid 0.1319  425 pairs/s
+  step 600/8037  train 0.1006  valid 0.0882  422 pairs/s
+  step 800/8037  train 0.0772  valid 0.0772  419 pairs/s
+  step 1000/8037  train 0.0664  valid 0.0610  416 pairs/s
+  step 1200/8037  train 0.0704  valid 0.0577  412 pairs/s
+  step 1400/8037  train 0.0606  valid 0.0563  410 pairs/s
+  step 1600/8037  train 0.0645  valid 0.0555  407 pairs/s
+  step 1800/8037  train 0.0616  valid 0.0557  405 pairs/s
+  step 2000/8037  train 0.0525  valid 0.0498  403 pairs/s
+  step 2200/8037  train 0.0550  valid 0.0522  402 pairs/s
+  step 2400/8037  train 0.0529  valid 0.0541  400 pairs/s
+  step 2600/8037  train 0.0547  valid 0.0446  398 pairs/s
+  step 2800/8037  train 0.0470  valid 0.0464  397 pairs/s
+  step 3000/8037  train 0.0458  valid 0.0509  396 pairs/s
+  step 3200/8037  train 0.0460  valid 0.0413  394 pairs/s
+  step 3400/8037  train 0.0477  valid 0.0443  393 pairs/s
+  step 3600/8037  train 0.0465  valid 0.0379  393 pairs/s
+  step 3800/8037  train 0.0477  valid 0.0467  392 pairs/s
+  step 4000/8037  train 0.0439  valid 0.0372  391 pairs/s
+  step 4200/8037  train 0.0429  valid 0.0347  390 pairs/s
+  step 4400/8037  train 0.0395  valid 0.0321  390 pairs/s
+  step 4600/8037  train 0.0371  valid 0.0375  389 pairs/s
+  step 4800/8037  train 0.0379  valid 0.0356  388 pairs/s
+  step 5000/8037  train 0.0386  valid 0.0363  388 pairs/s
+  step 5200/8037  train 0.0393  valid 0.0337  387 pairs/s
+  step 5400/8037  train 0.0398  valid 0.0371  387 pairs/s
+  step 5600/8037  train 0.0363  valid 0.0361  386 pairs/s
+  step 5800/8037  train 0.0393  valid 0.0309  386 pairs/s
+  step 6000/8037  train 0.0372  valid 0.0334  386 pairs/s
+  step 6200/8037  train 0.0339  valid 0.0336  385 pairs/s
+  step 6400/8037  train 0.0335  valid 0.0331  385 pairs/s
+  step 6600/8037  train 0.0383  valid 0.0333  385 pairs/s
+  step 6800/8037  train 0.0336  valid 0.0320  384 pairs/s
+  step 7000/8037  train 0.0392  valid 0.0304  384 pairs/s
+  step 7200/8037  train 0.0363  valid 0.0288  384 pairs/s
+  step 7400/8037  train 0.0351  valid 0.0288  383 pairs/s
+  step 7600/8037  train 0.0334  valid 0.0284  383 pairs/s
+  step 7800/8037  train 0.0323  valid 0.0278  383 pairs/s
+  step 8000/8037  train 0.0291  valid 0.0279  383 pairs/s
+  step 8037/8037  train 0.0309  valid 0.0280  382 pairs/s
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|##########| 1/1 [00:00<00:00,  2.43it/s]Writing model shards: 100%|##########| 1/1 [00:00<00:00,  2.43it/s]
+reranker saved -> models\rr_e5s  valid logloss 0.0334  AUC 0.9991

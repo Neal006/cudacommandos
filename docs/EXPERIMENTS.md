@@ -354,3 +354,61 @@ real and in the matcher, not in blocking.
 
 Scoring cost 117 min for 51,974,499 pairs (52 chunks, two passes); test blocking was cached from
 run 007, saving 52 min. Artifacts in `submissions/001/`.
+
+## 009 — laya vs e5 band reranker, head to head (branch `laya`)
+
+Neal's hypothesis: the India gap is native-script names, e5-small handles them poorly, and mmBERT-base
+(322M, 100+ languages) should do better. Tested as a drop-in swap -- same band, same training pairs,
+same `entities.txt` guard, same 30k GBDT sample. Only the model changes.
+
+Both rerankers trained here on identical data (514,335 pairs, same entity-grouped valid split, both
+excluding run 007's folds). `models/rr_e5s` did not exist on this machine, so it was trained too --
+without it there is no A/B, only a laya number with nothing to compare against.
+
+### Intrinsic (reranker's own valid split)
+
+| | rr_laya | rr_e5s |
+|---|---|---|
+| valid logloss | 0.03636 | **0.03339** |
+| valid AUC | 0.99893 | **0.99907** |
+| trainable params | 55.1M | ~22M |
+| train time | 132 min | **23 min** |
+
+### Downstream (30k pipeline, the number that matters)
+
+| | baseline (004) | laya | e5 |
+|---|---|---|---|
+| stage 1 | 0.9490 | 0.9490 | 0.9490 |
+| stage 2 | 0.9508 | 0.9608 | 0.9607 |
+| decision | 0.9512 | 0.9608 | 0.9607 |
+| **India** | 0.9369 | 0.9460 | **0.9469** |
+| US | 0.9606 | 0.9704 | 0.9697 |
+| band inference | -- | 55 s | **15 s** |
+
+### Verdict: reject laya, keep e5
+
+laya is **0.0009 worse on India** -- the single metric the hypothesis was built to win -- and 0.0001
+better overall, which is noise. It costs 5.8x the training time, 3.7x the inference, 2.5x the
+trainable parameters and a 647 MB checkpoint. There is no axis on which it wins.
+
+The premise had a flaw worth recording: the incumbent is `intfloat/multilingual-e5-small`, which is
+*already* multilingual. "e5 cannot read Devanagari" was the motivating assumption and it was never
+true, so the experiment was testing multilingual-vs-multilingual, not multilingual-vs-English.
+
+### The finding that matters more than the A/B
+
+Both rerankers lift the 30k baseline by the same ~0.0096, and AGENTS.md records the earlier e5
+reranker at "+0.009 UNVERIFIED (record-overlap leak audit pending)". Three numbers agreeing to
+within 0.0006 across two architectures with different tokenizers, parameter counts and pretraining
+is not what genuine model-quality differences look like. It is what a **shared confound** looks
+like.
+
+The obvious candidate is the leak Neal already flagged: `entities.txt` guards S1 entities, but S2/S3
+*records* can repeat between the reranker's training pairs and the GBDT sample. Both rerankers would
+exploit that equally, which is exactly the pattern observed.
+
+**So the leak audit is now the critical path, not reranker selection.** If the +0.010 is a leak it is
+fake for both models and must not reach the leaderboard; if it is real it is our largest single gain
+and should go in immediately. Nothing else about the reranker is worth tuning until that is settled.
+Concretely: measure the S2/S3 record overlap between the reranker's training pairs and the 30k GBDT
+sample, then retrain with those records excluded and see whether the gain survives.
