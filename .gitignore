@@ -11,6 +11,10 @@ dataset/
 
 # Pipeline outputs: matching_results.tsv for the full test set is ~100 MB.
 output/*.tsv
+# submissions/ keeps the scored file GZIPPED (~25 MB) so it clears GitHub's
+# 100 MB limit. *.tsv above does not match *.tsv.gz, but be explicit -- a
+# submission silently missing from a commit is the worst way to find out.
+!submissions/**/*.tsv.gz
 *.npy
 *.pkl
 
