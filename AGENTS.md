@@ -24,8 +24,21 @@ Python 3.11–3.13 (pandas<3, polars, scikit-learn, LightGBM, rapidfuzz) + Rust 
 - Not yet wired: the runlog hooks in run_pipeline.py (LLD §9) — run_v2.py has them.
 - 30k OOF (EXPERIMENTS 003–005): old 0.9266 → v2 stage 1 0.9490 → stage 2 0.9508 → decision 0.9512; +reranker stage 2 0.9600 UNVERIFIED (record-overlap leak audit pending, PR for Priyanshu).
 - 150k OOF (EXPERIMENTS 007, full sample, CPU only): stage 1 0.9500 -> stage 2 0.9526 -> decision 0.9532; India 0.9399 / US 0.9620; blocking recall 0.9498. Ahead of 30k at every stage.
-- Test phase run for the first time: blocking is ~57 min, not the 255 min EXPLAINER budgets (4.4x; throughput tracks index size). Candidate cache `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet` (52.0M pairs, 758 MB) and `stats_test_v1.pkl` are built -- share via `./aws/s3.sh share-cache`.
-- NO SUBMISSION YET: the 007 test phase deadlocked in split_stats' pool (fixed, c701d01). Caches survive, so a retry skips all blocking but still retrains stages 1-2 (~60 min; run_v2 has no resume).
+- Test phase run for the first time: blocking is ~52 min, not the 255 min EXPLAINER budgets (4.4x).
+  Throughput is a property of the INDEX, not the machine -- test rates France 1066 q/s (1.43M recs),
+  US 800 (3.82M), India 397 (4.72M); US searches fewer records than India and is still 2x faster
+  because Indian tokens are denser. Never quote q/s without the index it was measured against.
+  EXPLAINER §11 and DATA_BRIEF corrected. Candidate cache `cands_test_k30_df0.01_mdf3_ctry1_nall.parquet` (52.0M pairs, 758 MB) and `stats_test_v1.pkl` are built -- share via `./aws/s3.sh share-cache`.
+- NO SUBMISSION YET: the 007 test phase deadlocked in split_stats' pool (fixed, c701d01), and the
+  unchunked test featurization behind it would have OOMed next (fixed, 9aad360: predict_test_chunked,
+  two passes, entity-aligned cuts, ~19 GB -> ~1.5 GB peak). Caches survive, so a retry skips all
+  blocking and stats but still retrains stages 1-2 (~60 min; run_v2 has no resume).
+- Test cache is 50 S1 entities short of the 1,732,544 required (1,732,494 got candidates). Expected,
+  not a bug -- no token survives df pruning for them; write_outputs iterates the full test id list so
+  they emit empty match sets. Do not treat it as a blocker at upload time.
+- Decision layer measured on 288 combos at 150k: expected_f beats a global threshold by +0.0006,
+  soft assign beats none by +0.00007. Keep expected_f, stop tuning assign. The 3.7 points to the
+  0.9903 blocking ceiling are in the matcher, concentrated in India.
 - Windows: pools are capped by `config.WORKERS` (4 on spawn, AMLC_WORKERS to override) or the run OOMs at pool startup; `train_guarded.sh` must use the venv (system python is pandas 3.x); `*.sh` pinned LF.
 - RTX 3050 was absent from the PCI bus (Code 45, torch.cuda False) this boot, so the reranker is unverified and unrunnable in practice -- CPU fallback turns its 11 min into ~4-7 h. Needs a reboot.
 

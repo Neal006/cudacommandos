@@ -27,6 +27,8 @@ logs/
 tools/mlguard/target/
 runs/*/MLGUARD_STOP
 runs/adhoc/
+# smoke runs are a 2k-entity 'does it start at all' check, rebuilt in a minute
+runs/smoke_*/
 
 # mlguard's fixtures are tiny hand-written TSVs the checker tests against, so
 # they have to survive the blanket *.tsv rule above. Keep this negation last —

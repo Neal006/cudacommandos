@@ -256,6 +256,15 @@ Cached and worth sharing (`./aws/s3.sh share-cache`): `cands_test_k30_df0.01_mdf
   is `assign='soft'` + `select='expected_f'` with `miss=0.1`, not the global threshold that won at 30k.
   The gain is small (+0.0006 over stage 2) but the *choice* is sample-size dependent, so the decision
   layer is doing real work where it looked inert. Do not delete it on the 30k evidence.
+
+  Reading the full 288-row `decision_table.csv` back, the two axes separate cleanly and neither is
+  large. `select` is where the gain lives: best `expected_f` 0.953182 vs best `threshold` 0.952573,
+  **+0.0006**. `assign` is noise: within `expected_f`, `soft` beats `none` by 0.00007 — seven
+  ten-thousandths, on 150k entities. So "keep the decision layer" is right, but the honest version is
+  *keep `expected_f`, and stop tuning `assign`*. Neither clears Neal's own 0.003 bar for added
+  complexity; both are kept because they are already written and cost nothing at inference. The
+  remaining headroom is 0.9532 against a blocking ceiling of 0.9903 — **3.7 points, all of it in the
+  matcher**, and concentrated in India. That is where the next hour goes, not here.
 - **`loss_ratio` still fires.** 004 recorded it fixed to need a stalled valid loss; at 150k it tripped
   anyway — `fold 20 iter 210: valid/train loss 1.53 > 1.5` — stopping stage-2 fold 0 and rolling back
   to its best iteration. The guard behaved correctly; the threshold in `mlguard.toml` is tuned on 30k
@@ -275,6 +284,18 @@ when it spawned; a worker died, the pool could not replace it (`PermissionError:
 `DuplicateHandle`), and `pool.map` waited forever. It stalled rather than raised, which is the worse
 failure: 57 minutes of finished blocking sat on disk while the process held 10 GB doing nothing.
 Fixed in `c701d01`. Everything expensive was already cached, so the retry skips all blocking.
+
+**A second wall sits behind that one**, and the retry would have hit it. The test phase builds one
+feature frame for all 51,974,499 pairs at once: 46 float64 columns over 52M rows is ~19 GB, and
+stage 2's `concat` doubles it, against 23.7 GB total. `predict_test_chunked` (`9aad360`) streams it in
+entity-aligned chunks instead — two passes, because `claim_rank` / `claim_gap` / `n_claims` /
+`n_strong_claims` group by `cand_id` and one candidate can be claimed from different chunks, so stage 2
+is built once globally while only the wide stage-1 matrix is chunked. Cuts land only where `s1_id`
+changes, so every per-entity aggregate matches the unchunked result exactly. Peak drops from ~19 GB to
+roughly 1.5 GB per chunk. `AMLC_TEST_CHUNK` overrides the 4M default.
+
+Full narrative for this run, written for someone picking it up cold:
+[`runs/007_v2_full/CONTEXT.md`](../runs/007_v2_full/CONTEXT.md).
 
 ### Windows portability — the branch could not start at all before this
 

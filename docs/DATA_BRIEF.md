@@ -171,15 +171,35 @@ to featurize.
 
 ### Throughput (this machine, 10 physical cores)
 
-| Partition | Index size | Queries/sec |
-|---|---:|---:|
-| India | 4.13M | 75 |
-| US | 6.19M | 150 |
+Measured in run 007. Every row is `<queries> scored against <index>`:
 
-India runs 2× slower on a *smaller* index — Indian names and addresses share
-more tokens, so posting lists are denser and each query touches more of the
-matrix. Budget accordingly: full test blocking (1.73M queries: ~810k India,
-~663k US, ~260k France) is **roughly 4–5 hours**.
+| Phase | Partition | Queries | Index | Queries/sec | Wall clock |
+|---|---|---:|---:|---:|---:|
+| train | India | 59,869 | 4,133,346 | 359 | 2.7 min |
+| train | US | 90,131 | 6,186,873 | 601 | 2.5 min |
+| **test** | France | 259,452 | 1,434,993 | **1,066** | 4.1 min |
+| **test** | India | 809,986 | 4,717,565 | **397** | 34.0 min |
+| **test** | US | 663,106 | 3,817,031 | **800** | 13.8 min |
+
+Two things drive the rate, and both are about how many index rows a query
+touches:
+
+- **Index size.** France searches 1.4M records and runs 2.7× faster than
+  India's 4.7M.
+- **Token density.** Test US searches *fewer* records than test India
+  (3.8M vs 4.7M) and is still 2× faster. Indian names and addresses share
+  more tokens, so posting lists are denser and each query touches more of
+  the matrix.
+
+India therefore dominates the wall clock — 34 of the 52 minutes — even though
+it is not the biggest index.
+
+**Full test blocking measured 52 minutes.** An earlier version of this brief
+budgeted 4–5 hours from rates of 75/150 q/s. The lesson is not that those
+numbers were sloppy but that **blocking throughput is not a property of the
+machine** — it is a property of the index being searched, so a rate measured
+against one index does not predict another. Always quote q/s with the index
+it was measured against.
 
 Candidates are cached to `<data dir>/interim/cands_*.parquet`, keyed on every
 parameter that changes the result, so the cost is paid once and matcher
