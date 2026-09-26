@@ -81,13 +81,28 @@ def make_training_pairs(exclude_ids, n_entities, seed=7, neg_per_pos=3):
 
 
 # ------------------------------------------------------------------ model
+_INFER_CACHE = {}
+# Inference reloads the checkpoint on every score() call, and the chunked test
+# path calls score() once per chunk -- 42 loads in one run. Each load builds a
+# fresh model on the GPU and leaves allocations the caching allocator does not
+# hand back, so memory climbs until the run is killed. It died at stage-2 chunk
+# 42 of 44 that way. Training is deliberately NOT cached: it mutates the model
+# (freezing layers, optimizer state) and must start from a clean copy.
+
+
 def _load(model_dir_or_base, train=False):
+    key = str(model_dir_or_base)
+    if not train and key in _INFER_CACHE:
+        return _INFER_CACHE[key]
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
     torch, dev, _ = _torch()
     tok = AutoTokenizer.from_pretrained(model_dir_or_base)
     model = AutoModelForSequenceClassification.from_pretrained(model_dir_or_base, num_labels=1).to(dev)
     if train:
         model.base_model.embeddings.word_embeddings.requires_grad_(False)
+        return tok, model
+    model.eval()
+    _INFER_CACHE[key] = (tok, model)
     return tok, model
 
 

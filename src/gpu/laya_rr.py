@@ -117,8 +117,20 @@ def fetch(repo=BASE_REPO, out=BASE_DIR, revision=BASE_REVISION):
     return out
 
 
+_INFER_CACHE = {}
+# Inference reloads the checkpoint on every score() call, and the chunked test
+# path calls score() once per chunk -- 42 loads in one run. Each load builds a
+# fresh model on the GPU and leaves allocations the caching allocator does not
+# hand back, so memory climbs until the run is killed. It died at stage-2 chunk
+# 42 of 44 that way. Training is deliberately NOT cached: it mutates the model
+# (freezing layers, optimizer state) and must start from a clean copy.
+
+
 def _load(model_dir, train_layers=None):
     """(tokenizer, DecisionModel, laya cfg, noul temperature) on the best device."""
+    key = str(model_dir)
+    if train_layers is None and key in _INFER_CACHE:
+        return _INFER_CACHE[key]
     import laya
     torch, dev, _ = RR._torch()
     model_dir = Path(model_dir)
@@ -133,7 +145,10 @@ def _load(model_dir, train_layers=None):
     model = ag.model
     if train_layers is not None:
         _freeze(model, train_layers)
-    return ag.tok, model, ag.cfg, float(ag.temperature[NOUL])
+        return ag.tok, model, ag.cfg, float(ag.temperature[NOUL])
+    model.eval()
+    _INFER_CACHE[key] = (ag.tok, model, ag.cfg, float(ag.temperature[NOUL]))
+    return _INFER_CACHE[key]
 
 
 def _freeze(model, train_layers):
