@@ -327,3 +327,30 @@ Open questions worth an entry each:
 - **Feature ablation.** Which of the ~30 pair features carry the gain? Cheap
   to check from LightGBM importances, and it is exactly what the methodology
   document asks for.
+
+## 008 — first leaderboard submission (lb-20260926-1)
+
+Scored the full test set from run 007's model with `src/score_test.py` (no retraining), and uploaded.
+
+```
+offline OOF macro F0.5   0.9532
+LEADERBOARD              0.943     rank 934, leader ~0.988
+```
+
+**About one point of optimism, and France is the leading suspect.** It is 15% of the test set with
+zero training labels, so no OOF number covers it; a weak 15% slice costs roughly this much. The
+alternative explanations are weaker: the output matched OOF closely on every shape statistic
+(singleton rate 6.25% vs 6.28%, links/entity 3.125 vs 3.138), which rules out a gross
+train/inference mismatch, and blocking recall is measured on train only, so a France blocking hole
+would show up here too.
+
+**This is measurable without labels** and has not been done: per-country orphan rate and
+top-candidate similarity distribution from the cached test candidates. If France's distribution
+looks like India's rather than the US's, we know where the point went. Doing that before tuning
+anything else avoids optimizing the 85% we can already see.
+
+The gap to the leader is 4.5 points, and our own blocking ceiling is 0.9903 — so the headroom is
+real and in the matcher, not in blocking.
+
+Scoring cost 117 min for 51,974,499 pairs (52 chunks, two passes); test blocking was cached from
+run 007, saving 52 min. Artifacts in `submissions/001/`.

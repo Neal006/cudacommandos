@@ -12,7 +12,7 @@ code commit       6897207c77596a0ceb92be4e7a0b49a65b411fcd
 branch            nealstuff
 model             runs/007_v2_full/model.pkl   (35.7 MB)
 training run      v2_20260926_0140
-leaderboard score PENDING -- fill in after upload
+leaderboard score 94.3  (rank 934; leader ~98.8)
 ```
 
 ## Command
