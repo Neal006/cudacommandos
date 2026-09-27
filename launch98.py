@@ -48,6 +48,14 @@ BOXES = {
     "bge": ("ml.c7i.48xlarge", "sm_proc_hopeso.py",
             {"AMLC_RR": "bge", "AMLC_RUN_ID": "015_hopeso_bge", "AMLC_BAND": "0.05 0.95"},
             [("rerank", None)], 3.0),
+    # Same config as e5, but early stopping gets 500 rounds of patience instead
+    # of 100. Folds that run long score materially better (473 trees -> valid
+    # 0.9474 against 3381 trees -> 0.9524 on identical data), and which side of
+    # that a fold lands on is currently noise.
+    "long": ("ml.m7i.48xlarge", "sm_proc_hopeso.py",
+             {"AMLC_RR": "e5", "AMLC_RUN_ID": "016_hopeso_e5_long",
+              "AMLC_BAND": "0.2 0.8", "AMLC_ES_ROUNDS": "500"},
+             [("rerank", f"{S3}/rr_e5s/")], 3.5),
     "rr":  ("ml.g5.2xlarge", "sm_proc_rr.py", {}, [], 1.5),
 }
 

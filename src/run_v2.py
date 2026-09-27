@@ -11,6 +11,7 @@ cache Priyanshu already paid 4-5 h for is reused as-is.
 """
 import argparse
 import gc
+import os
 import pickle
 import time
 from pathlib import Path
@@ -36,6 +37,14 @@ PARAMS = dict(objective="binary", metric="binary_logloss", learning_rate=0.05,
               num_leaves=63, min_data_in_leaf=50, feature_fraction=0.8,
               bagging_fraction=0.8, bagging_freq=1, verbosity=-1, seed=C.SEED, num_threads=0)
 MAX_ROUNDS = 2000
+# Early stopping watches binary_logloss, but the objective is macro F0.5 per
+# entity. Logloss flattens long before F0.5 does, so with 100 rounds of patience
+# whether a fold ends near 500 trees or near 3,400 is largely noise -- and the
+# long ones score better. Measured on identical data, same seed, same 46
+# features: a fold that stopped at 473 scored valid 0.9474, one that ran to 3381
+# scored 0.9524. Across runs, 0/5 long folds gave stage 1 0.9494 and 3/5 gave
+# 0.9517. Default stays 100 so existing runs reproduce; raise with AMLC_ES_ROUNDS.
+ES_ROUNDS = int(os.environ.get("AMLC_ES_ROUNDS") or 100)
 
 
 def log(msg):
@@ -218,7 +227,7 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage, rounds=None):
         dtr = lgb.Dataset(X[tr], y[tr])
         dva = lgb.Dataset(X[va], y[va], reference=dtr)
         m = lgb.train(PARAMS, dtr, rounds, valid_sets=[dtr, dva], valid_names=["train", "valid"],
-                      callbacks=[lgb.early_stopping(100, verbose=False),
+                      callbacks=[lgb.early_stopping(ES_ROUNDS, verbose=False),
                                  run.lgb_callback(fold=int(stage * 10 + k))])
         oof[va] = m.predict(X[va], num_iteration=m.best_iteration)
         # overfit signal: F0.5@0.5 on a training-fold entity subsample vs the valid fold
