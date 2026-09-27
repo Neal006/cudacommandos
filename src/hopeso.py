@@ -49,7 +49,7 @@ def _vibe():
     raw = os.environ.get("AMLC_VIBE")
     if not raw:
         return dict(sib_top=3, sib_cap=50, dost_cap=10, keep=0)
-    t, c, d, k = (int(x) for x in raw.split(","))
+    t, c, d, k = (int(x) for x in raw.split(",")[:4])
     return dict(sib_top=t, sib_cap=c, dost_cap=d, keep=k)
 
 
@@ -60,13 +60,38 @@ def log(m):
     print(f"[hopeso {time.strftime('%H:%M:%S')}] {m}", flush=True)
 
 
+# Address-anchored keys. The two existing keys (cn, sk) are both pure name
+# keys, so a record whose name is mangled past recognition has no way back in
+# no matter how well its address matches. These three anchor on the house
+# number instead, which is the one address token that is rarely paraphrased:
+#
+#   nn  first name token + house number   ("saravana" + "12")
+#   ns  house number + longest street token ("12" + "gandhinagar")
+#   nc  first name token + trailing address token, usually the city
+#
+# Pool caps still apply, so a generic pairing like ("medical" + "12") is
+# dropped before it can generate thousands of candidates.
+def _addr_bits(a: str):
+    toks = N.core_addr(a).split() if a else []
+    alphas = [t for t in toks if t.isalpha() and len(t) >= 3]
+    return (N.first_number(a), max(alphas, key=len) if alphas else "",
+            alphas[-1] if alphas else "")
+
+
 def _keyz_chunk(args):
     names, addrs = args
     out = []
     for n, a in zip(names, addrs):
         cn = N.core_name(n) if n else ""
         tn = N.translit_core(n) if n else ""
-        out.append((cn, N.skeleton(tn) if tn else "", not (a or "").strip()))
+        sk = N.skeleton(tn) if tn else ""
+        num, street, city = _addr_bits(a)
+        # transliterated first token, so Indic-script names key the same way
+        ntok = (tn or cn).split()[0] if (tn or cn) else ""
+        out.append((cn, sk, not (a or "").strip(),
+                    f"{ntok}|{num}" if ntok and num else "",
+                    f"{num}|{street}" if num and street else "",
+                    f"{ntok}|{city}" if ntok and city else ""))
     return out
 
 
@@ -79,12 +104,15 @@ def keyz(df: pl.DataFrame, workers=None) -> pl.DataFrame:
         res = [r for part in pool.map(_keyz_chunk, jobs) for r in part]
     return pl.DataFrame({
         C.ID: df[C.ID], C.COUNTRY: df[C.COUNTRY],
-        "cn": [r[0] for r in res], "sk": [r[1] for r in res], "addr_empty": [r[2] for r in res]})
+        "cn": [r[0] for r in res], "sk": [r[1] for r in res], "addr_empty": [r[2] for r in res],
+        "nn": [r[3] for r in res], "ns": [r[4] for r in res], "nc": [r[5] for r in res]})
 
 
 def src_keyz(split: str) -> pl.DataFrame:
     """Keys for all S2+S3 records of a split, cached (10M rows is ~4 min on 4 cores)."""
-    path = C.INTERIM / f"hopeso_keys_{split}.parquet"
+    # _v2 adds nn/ns/nc. The name has to change with the schema: a v1 cache
+    # read by this code is missing three columns and fails deep inside a join.
+    path = C.INTERIM / f"hopeso_keys_{split}_v2.parquet"
     if path.exists():
         return pl.read_parquet(path)
     from ingest import read_polars
@@ -133,9 +161,10 @@ def dost(s1k: pl.DataFrame, k: pl.DataFrame, key: str, cap: int) -> pl.DataFrame
 
 def extras(base: pl.DataFrame, s1k: pl.DataFrame, k: pl.DataFrame, vibe=VIBE) -> pl.DataFrame:
     """All jugaad passes, minus what the base frame already has."""
-    parts = [sibs(base, k, key, vibe["sib_top"], vibe["sib_cap"]) for key in ("cn", "sk")]
+    keys = tuple(os.environ.get("AMLC_KEYS", "cn,sk").split(","))
+    parts = [sibs(base, k, key, vibe["sib_top"], vibe["sib_cap"]) for key in keys]
     if vibe.get("dost_cap"):
-        parts += [dost(s1k, k, key, vibe["dost_cap"]) for key in ("cn", "sk")]
+        parts += [dost(s1k, k, key, vibe["dost_cap"]) for key in keys]
     return (pl.concat(parts).unique()
             .join(base.select("s1_id", "cand_id"), on=["s1_id", "cand_id"], how="anti"))
 
@@ -190,6 +219,9 @@ def base_frame(split: str, n=None) -> pl.DataFrame:
 def tag_path(split: str, n=None, tag="hopeso", vibe=VIBE) -> Path:
     """The pass settings are in the name: change VIBE and a stale frame can't be reused."""
     v = f"t{vibe['sib_top']}c{vibe['sib_cap']}d{vibe.get('dost_cap', 0)}"
+    ks = os.environ.get("AMLC_KEYS", "cn,sk")
+    if ks != "cn,sk":
+        v += "_" + ks.replace(",", "")
     if vibe.get("keep"):
         v += f"k{vibe['keep']}"
     return C.INTERIM / (f"cands_{split}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
@@ -247,10 +279,13 @@ def measure(n: int):
     b_hit = hit(base)
     log(f"base: recall {b_hit / n_true:.4f}  ({base.height / n_ent:.1f} cands/entity)")
     rows = []
+    # AMLC_MEASURE_KEYS so the address-anchored keys can be measured without
+    # changing what a default run builds.
+    mkeys = tuple(os.environ.get("AMLC_MEASURE_KEYS", "cn,sk").split(","))
     variants = {f"sibs {key} top{t} cap{c}": sibs(base, k, key, t, c)
-                for key in ("cn", "sk") for t in (3, 5) for c in (50, 200, 1000)}
+                for key in mkeys for t in (3, 5) for c in (50, 200, 1000)}
     variants |= {f"dost {key} cap{c}": dost(s1k, k, key, c)
-                 for key in ("cn", "sk") for c in (10, 50, 200)}
+                 for key in mkeys for c in (10, 50, 200)}
     for name, fr in variants.items():
         fr = fr.join(base.select("s1_id", "cand_id"), on=["s1_id", "cand_id"], how="anti")
         rows.append((name, hit(fr), fr.height))
