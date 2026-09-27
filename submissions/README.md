@@ -10,6 +10,30 @@ proves which code and which model made it.
 
 ---
 
+## Index (updated 2026-09-27 16:25)
+
+| # | model | blocking recall | OOF | **LB** | status |
+|---|---|---|---|---|---|
+| 001 | 150k, no reranker | 0.9498 | 0.9532 | **0.943** | uploaded, rank 934 |
+| 002 | 30k + e5 reranker | 0.9496 | 0.9607 | **0.951** | uploaded |
+| 003 | 150k + e5 reranker | 0.9498 | 0.9626 | **0.953** | uploaded, rank ~1760 |
+| 004 | 150k + e5 + contention fix | 0.9498 | **0.9644** | not uploaded | HOLD |
+
+Every file here is `matching_results.tsv.gz`. Unzip before uploading; the
+portal takes the `.tsv`. `candidate_pairs.tsv` is never uploaded and is not in
+git (694 MB, not scored).
+
+The OOF-to-leaderboard gap has been stable at **-0.0102 / -0.0097 / -0.0096**,
+which is what makes OOF a usable predictor at all. Tonight's runs report a
+`holdout_score` instead, computed on 50k unseen entities scored by the fold
+mean -- the way test is scored -- so it should need no such correction.
+
+004 is the odd one out: it is our best offline model and has never been
+uploaded, because the hopeso runs finishing this evening are built on better
+candidates (recall 0.9630 against its 0.9498) and are expected to beat it.
+
+---
+
 ## For Krisha — what to upload to Unstop
 
 **Upload one file: `matching_results.tsv`.** That is the only file the

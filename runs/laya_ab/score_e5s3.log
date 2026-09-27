@@ -1,0 +1,111 @@
+[    0.2s] loaded runs\ab_e5s\model.pkl: 5 stage-1 models, 5 stage-2, decision {'assign': 'hard', 'select': 'expected_f', 'thr': nan, 'miss': 0.0, 'f05': 0.9606988487876272}
+[    0.2s] band reranker: models/rr_e5s, band (0.2, 0.8)
+[  116.2s] loading cached candidates: cands_test_k30_df0.01_mdf3_ctry1_nall.parquet
+[  137.8s] test: 51,974,499 pairs over 1,732,494 entities; 50 of 1,732,544 got no candidates and will be written empty
+[  137.8s] score cache key 50cf8414638d  (stage-1 testp1_50cf8414638d.npy, final testp_50cf8414638d.npy)
+[  214.8s] test scoring in 44 entity-aligned chunks of ~1,200,000 pairs (L 1,732,494 records, source pool 9,969,589)
+[  214.9s] stage-1 scores loaded from D:\amlc_data\interim\testp1_50cf8414638d.npy -- skipping pass 1
+[  350.7s] stage-2 claim features built globally: (51974499, 4)
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|##########| 201/201 [00:00<00:00, 6321.32it/s]
+[  433.3s] reranker (gpu.reranker): scored 18,566 band pairs (1.5%) in 18s
+[  438.8s]   stage-2 chunk 1/44 rows 0-1,200,000
+[  513.4s] reranker (gpu.reranker): scored 18,613 band pairs (1.6%) in 9s
+[  518.9s]   stage-2 chunk 2/44 rows 1,200,000-2,400,000
+[  593.1s] reranker (gpu.reranker): scored 18,706 band pairs (1.6%) in 9s
+[  598.6s]   stage-2 chunk 3/44 rows 2,400,000-3,600,025
+[  672.2s] reranker (gpu.reranker): scored 18,579 band pairs (1.5%) in 9s
+[  677.7s]   stage-2 chunk 4/44 rows 3,600,025-4,800,045
+[  751.4s] reranker (gpu.reranker): scored 18,338 band pairs (1.5%) in 9s
+[  756.9s]   stage-2 chunk 5/44 rows 4,800,045-6,000,074
+[  831.0s] reranker (gpu.reranker): scored 18,608 band pairs (1.6%) in 9s
+[  836.6s]   stage-2 chunk 6/44 rows 6,000,074-7,200,087
+[  910.3s] reranker (gpu.reranker): scored 18,555 band pairs (1.5%) in 9s
+[  915.9s]   stage-2 chunk 7/44 rows 7,200,087-8,400,113
+[  989.8s] reranker (gpu.reranker): scored 18,874 band pairs (1.6%) in 9s
+[  995.4s]   stage-2 chunk 8/44 rows 8,400,113-9,600,113
+[ 1069.0s] reranker (gpu.reranker): scored 18,600 band pairs (1.5%) in 8s
+[ 1074.6s]   stage-2 chunk 9/44 rows 9,600,113-10,800,117
+[ 1147.7s] reranker (gpu.reranker): scored 18,526 band pairs (1.5%) in 8s
+[ 1153.3s]   stage-2 chunk 10/44 rows 10,800,117-12,000,132
+[ 1227.8s] reranker (gpu.reranker): scored 18,489 band pairs (1.5%) in 9s
+[ 1233.4s]   stage-2 chunk 11/44 rows 12,000,132-13,200,151
+[ 1308.0s] reranker (gpu.reranker): scored 18,551 band pairs (1.5%) in 9s
+[ 1313.5s]   stage-2 chunk 12/44 rows 13,200,151-14,400,171
+[ 1387.2s] reranker (gpu.reranker): scored 18,589 band pairs (1.5%) in 8s
+[ 1392.7s]   stage-2 chunk 13/44 rows 14,400,171-15,600,191
+[ 1466.1s] reranker (gpu.reranker): scored 18,712 band pairs (1.6%) in 9s
+[ 1471.7s]   stage-2 chunk 14/44 rows 15,600,191-16,800,191
+[ 1545.8s] reranker (gpu.reranker): scored 18,668 band pairs (1.6%) in 9s
+[ 1551.3s]   stage-2 chunk 15/44 rows 16,800,191-18,000,201
+[ 1625.4s] reranker (gpu.reranker): scored 18,534 band pairs (1.5%) in 9s
+[ 1630.9s]   stage-2 chunk 16/44 rows 18,000,201-19,200,201
+[ 1704.8s] reranker (gpu.reranker): scored 18,600 band pairs (1.6%) in 9s
+[ 1710.3s]   stage-2 chunk 17/44 rows 19,200,201-20,400,201
+[ 1783.9s] reranker (gpu.reranker): scored 18,638 band pairs (1.6%) in 9s
+[ 1789.4s]   stage-2 chunk 18/44 rows 20,400,201-21,600,201
+[ 1862.7s] reranker (gpu.reranker): scored 18,860 band pairs (1.6%) in 9s
+[ 1868.3s]   stage-2 chunk 19/44 rows 21,600,201-22,800,220
+[ 1942.7s] reranker (gpu.reranker): scored 18,768 band pairs (1.6%) in 9s
+[ 1948.2s]   stage-2 chunk 20/44 rows 22,800,220-24,000,242
+[ 2023.3s] reranker (gpu.reranker): scored 18,736 band pairs (1.6%) in 9s
+[ 2028.9s]   stage-2 chunk 21/44 rows 24,000,242-25,200,270
+[ 2102.0s] reranker (gpu.reranker): scored 18,285 band pairs (1.5%) in 8s
+[ 2107.5s]   stage-2 chunk 22/44 rows 25,200,270-26,400,270
+[ 2181.3s] reranker (gpu.reranker): scored 18,718 band pairs (1.6%) in 9s
+[ 2186.9s]   stage-2 chunk 23/44 rows 26,400,270-27,600,270
+[ 2260.9s] reranker (gpu.reranker): scored 18,456 band pairs (1.5%) in 9s
+[ 2266.4s]   stage-2 chunk 24/44 rows 27,600,270-28,800,279
+[ 2340.3s] reranker (gpu.reranker): scored 18,703 band pairs (1.6%) in 9s
+[ 2345.9s]   stage-2 chunk 25/44 rows 28,800,279-30,000,279
+[ 2420.6s] reranker (gpu.reranker): scored 18,801 band pairs (1.6%) in 9s
+[ 2426.1s]   stage-2 chunk 26/44 rows 30,000,279-31,200,279
+[ 2499.5s] reranker (gpu.reranker): scored 18,821 band pairs (1.6%) in 9s
+[ 2505.0s]   stage-2 chunk 27/44 rows 31,200,279-32,400,305
+[ 2578.4s] reranker (gpu.reranker): scored 18,628 band pairs (1.6%) in 9s
+[ 2583.9s]   stage-2 chunk 28/44 rows 32,400,305-33,600,331
+[ 2657.9s] reranker (gpu.reranker): scored 18,600 band pairs (1.5%) in 9s
+[ 2663.5s]   stage-2 chunk 29/44 rows 33,600,331-34,800,352
+[ 2738.7s] reranker (gpu.reranker): scored 18,779 band pairs (1.6%) in 9s
+[ 2744.3s]   stage-2 chunk 30/44 rows 34,800,352-36,000,352
+[ 2817.9s] reranker (gpu.reranker): scored 18,560 band pairs (1.5%) in 9s
+[ 2823.5s]   stage-2 chunk 31/44 rows 36,000,352-37,200,381
+[ 2897.7s] reranker (gpu.reranker): scored 18,558 band pairs (1.5%) in 9s
+[ 2903.2s]   stage-2 chunk 32/44 rows 37,200,381-38,400,381
+[ 2977.3s] reranker (gpu.reranker): scored 18,679 band pairs (1.6%) in 9s
+[ 2982.7s]   stage-2 chunk 33/44 rows 38,400,381-39,600,381
+[ 3056.6s] reranker (gpu.reranker): scored 18,469 band pairs (1.5%) in 8s
+[ 3062.1s]   stage-2 chunk 34/44 rows 39,600,381-40,800,385
+[ 3136.5s] reranker (gpu.reranker): scored 18,586 band pairs (1.5%) in 9s
+[ 3142.0s]   stage-2 chunk 35/44 rows 40,800,385-42,000,385
+[ 3216.3s] reranker (gpu.reranker): scored 18,824 band pairs (1.6%) in 9s
+[ 3221.7s]   stage-2 chunk 36/44 rows 42,000,385-43,200,402
+[ 3295.6s] reranker (gpu.reranker): scored 18,774 band pairs (1.6%) in 9s
+[ 3301.1s]   stage-2 chunk 37/44 rows 43,200,402-44,400,431
+[ 3374.6s] reranker (gpu.reranker): scored 18,730 band pairs (1.6%) in 9s
+[ 3380.2s]   stage-2 chunk 38/44 rows 44,400,431-45,600,444
+[ 3454.7s] reranker (gpu.reranker): scored 18,533 band pairs (1.5%) in 9s
+[ 3460.2s]   stage-2 chunk 39/44 rows 45,600,444-46,800,459
+[ 3533.8s] reranker (gpu.reranker): scored 18,527 band pairs (1.5%) in 9s
+[ 3539.4s]   stage-2 chunk 40/44 rows 46,800,459-48,000,488
+[ 3613.1s] reranker (gpu.reranker): scored 18,833 band pairs (1.6%) in 9s
+[ 3618.7s]   stage-2 chunk 41/44 rows 48,000,488-49,200,488
+[ 3692.2s] reranker (gpu.reranker): scored 18,653 band pairs (1.6%) in 9s
+[ 3697.7s]   stage-2 chunk 42/44 rows 49,200,488-50,400,494
+[ 3771.5s] reranker (gpu.reranker): scored 18,358 band pairs (1.5%) in 8s
+[ 3776.9s]   stage-2 chunk 43/44 rows 50,400,494-51,600,494
+[ 3810.8s] reranker (gpu.reranker): scored 5,828 band pairs (1.6%) in 3s
+[ 3812.7s]   stage-2 chunk 44/44 rows 51,600,494-51,974,499
+[ 3816.9s] final scores cached -> D:\amlc_data\interim\testp_50cf8414638d.npy
+[ 3817.0s] scored 51,974,499 pairs in 61.3 min
+[ 4059.2s] predicted singleton rate 0.0623  links/entity 3.18
+[ 4059.2s]   France: singleton 0.0535  links/entity 3.27
+[ 4059.2s]   India: singleton 0.0681  links/entity 3.08
+[ 4059.2s]   US: singleton 0.0587  links/entity 3.27
+[ 4059.2s]   matching_results: D:\amlc_data\output\matching_results.tsv
+[ 4059.2s]   candidate_pairs: D:\amlc_data\output\candidate_pairs.tsv
+[ 4059.2s]   rows: 1732544
+[ 4059.2s]   entities_with_matches: 1624572
+[ 4059.2s]   predicted_singletons: 107972
+[ 4059.2s]   predicted_singleton_rate: 0.0623199179934247
+[ 4059.2s]   mean_matches: 3.1817062077499907
+[ 4059.2s]   entities_with_matches_outside_candidates: 0

@@ -1,0 +1,20 @@
+[    0.0s] run ab_laya -> C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\runs\ab_laya
+[   71.9s] loading cached candidates: cands_train_k30_df0.01_mdf3_ctry1_n30000.parquet
+[   73.8s] train: 30,000 entities, 900,000 pairs, 98,439 positives, blocking recall 0.9496
+[  111.2s] features (900000, 46)
+[  169.3s] stage 1 fold 0: best_iter 923  F@0.5 train 0.9737 valid 0.9439
+[  231.0s] stage 1 fold 1: best_iter 969  F@0.5 train 0.9718 valid 0.9480
+[  288.5s] stage 1 fold 2: best_iter 982  F@0.5 train 0.9739 valid 0.9486
+[  346.3s] stage 1 fold 3: best_iter 1024  F@0.5 train 0.9748 valid 0.9434
+[  403.5s] stage 1 fold 4: best_iter 1036  F@0.5 train 0.9750 valid 0.9451
+[  426.9s] stage 1 (v2 features, global threshold): 0.9490
+[  481.9s] reranker (gpu.laya_rr): scored 10,524 band pairs (1.2%) in 55s
+[  530.2s] stage 2 fold 0: best_iter 193  F@0.5 train 0.9638 valid 0.9566
+[  573.7s] stage 2 fold 1: best_iter 224  F@0.5 train 0.9610 valid 0.9600
+[  614.6s] stage 2 fold 2: best_iter 188  F@0.5 train 0.9617 valid 0.9595
+[  655.7s] stage 2 fold 3: best_iter 211  F@0.5 train 0.9638 valid 0.9590
+[  696.9s] stage 2 fold 4: best_iter 224  F@0.5 train 0.9631 valid 0.9607
+[  719.6s] stage 2 (global threshold): 0.9608
+[  740.8s] decision layer best: {'assign': 'soft', 'select': 'expected_f', 'thr': nan, 'miss': 0.05, 'f05': 0.9607861279205197}
+[  742.0s] per country: {'India': 0.9459960982475285, 'US': 0.9704451223928744}  predicted singletons 0.064  links/entity 3.19
+[  743.0s] train-only: done

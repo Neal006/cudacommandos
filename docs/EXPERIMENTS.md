@@ -327,3 +327,180 @@ Open questions worth an entry each:
 - **Feature ablation.** Which of the ~30 pair features carry the gain? Cheap
   to check from LightGBM importances, and it is exactly what the methodology
   document asks for.
+
+## 008 — first leaderboard submission (lb-20260926-1)
+
+Scored the full test set from run 007's model with `src/score_test.py` (no retraining), and uploaded.
+
+```
+offline OOF macro F0.5   0.9532
+LEADERBOARD              0.943     rank 934, leader ~0.988
+```
+
+**About one point of optimism, and France is the leading suspect.** It is 15% of the test set with
+zero training labels, so no OOF number covers it; a weak 15% slice costs roughly this much. The
+alternative explanations are weaker: the output matched OOF closely on every shape statistic
+(singleton rate 6.25% vs 6.28%, links/entity 3.125 vs 3.138), which rules out a gross
+train/inference mismatch, and blocking recall is measured on train only, so a France blocking hole
+would show up here too.
+
+**This is measurable without labels** and has not been done: per-country orphan rate and
+top-candidate similarity distribution from the cached test candidates. If France's distribution
+looks like India's rather than the US's, we know where the point went. Doing that before tuning
+anything else avoids optimizing the 85% we can already see.
+
+The gap to the leader is 4.5 points, and our own blocking ceiling is 0.9903 — so the headroom is
+real and in the matcher, not in blocking.
+
+Scoring cost 117 min for 51,974,499 pairs (52 chunks, two passes); test blocking was cached from
+run 007, saving 52 min. Artifacts in `submissions/001/`.
+
+## 009 — laya vs e5 band reranker, head to head (branch `laya`)
+
+Neal's hypothesis: the India gap is native-script names, e5-small handles them poorly, and mmBERT-base
+(322M, 100+ languages) should do better. Tested as a drop-in swap -- same band, same training pairs,
+same `entities.txt` guard, same 30k GBDT sample. Only the model changes.
+
+Both rerankers trained here on identical data (514,335 pairs, same entity-grouped valid split, both
+excluding run 007's folds). `models/rr_e5s` did not exist on this machine, so it was trained too --
+without it there is no A/B, only a laya number with nothing to compare against.
+
+### Intrinsic (reranker's own valid split)
+
+| | rr_laya | rr_e5s |
+|---|---|---|
+| valid logloss | 0.03636 | **0.03339** |
+| valid AUC | 0.99893 | **0.99907** |
+| trainable params | 55.1M | ~22M |
+| train time | 132 min | **23 min** |
+
+### Downstream (30k pipeline, the number that matters)
+
+| | baseline (004) | laya | e5 |
+|---|---|---|---|
+| stage 1 | 0.9490 | 0.9490 | 0.9490 |
+| stage 2 | 0.9508 | 0.9608 | 0.9607 |
+| decision | 0.9512 | 0.9608 | 0.9607 |
+| **India** | 0.9369 | 0.9460 | **0.9469** |
+| US | 0.9606 | 0.9704 | 0.9697 |
+| band inference | -- | 55 s | **15 s** |
+
+### Verdict: reject laya, keep e5
+
+laya is **0.0009 worse on India** -- the single metric the hypothesis was built to win -- and 0.0001
+better overall, which is noise. It costs 5.8x the training time, 3.7x the inference, 2.5x the
+trainable parameters and a 647 MB checkpoint. There is no axis on which it wins.
+
+The premise had a flaw worth recording: the incumbent is `intfloat/multilingual-e5-small`, which is
+*already* multilingual. "e5 cannot read Devanagari" was the motivating assumption and it was never
+true, so the experiment was testing multilingual-vs-multilingual, not multilingual-vs-English.
+
+### The finding that matters more than the A/B
+
+Both rerankers lift the 30k baseline by the same ~0.0096, and AGENTS.md records the earlier e5
+reranker at "+0.009 UNVERIFIED (record-overlap leak audit pending)". Three numbers agreeing to
+within 0.0006 across two architectures with different tokenizers, parameter counts and pretraining
+is not what genuine model-quality differences look like. It is what a **shared confound** looks
+like.
+
+The obvious candidate is the leak Neal already flagged: `entities.txt` guards S1 entities, but S2/S3
+*records* can repeat between the reranker's training pairs and the GBDT sample. Both rerankers would
+exploit that equally, which is exactly the pattern observed.
+
+**So the leak audit is now the critical path, not reranker selection.** If the +0.010 is a leak it is
+fake for both models and must not reach the leaderboard; if it is real it is our largest single gain
+and should go in immediately. Nothing else about the reranker is worth tuning until that is settled.
+Concretely: measure the S2/S3 record overlap between the reranker's training pairs and the 30k GBDT
+sample, then retrain with those records excluded and see whether the gain survives.
+
+## 011 — v4: claim features over the full frame (the contention fix)
+
+Stage 2's competition features are raw counts over whatever Source-1 set is present, and we train
+with 150k entities while inferring with 1,732,544. Measured mean n_claims: train 150k **1.957**,
+test **5.549** — a 2.8x shift in the second most important feature in stage 2 (`n_strong_claims`,
+importance 2.52M behind only p1's 14.35M).
+
+`run_v4.py` computes those counts over the full 2,206,808-entity train frame (66,204,198 pairs)
+while still training the GBDT on 150k. Measured on the run: contention went to **6.717**, which
+brackets test's 5.549 instead of sitting far below it.
+
+```
+                        003 (150k+rr)    011 (+contention)
+stage 1                    0.9490            0.9494
+stage 2                    0.9626            0.9644
+India                      0.9491            0.9514
+US                         0.9717            0.9730
+```
+
+**+0.0018 OOF, +0.0023 on India.** That was not the predicted outcome. The fix aligns training with
+test contention, and OOF is *measured* in the low-contention regime, so the expectation was flat or
+slightly worse OOF with the benefit visible only on the leaderboard. Getting a gain anyway means the
+full-frame claim counts are genuinely more informative, not merely better matched to test — the
+sample-only counts were not just mis-scaled, they were noisy.
+
+**The decision layer changed its mind.** 003 chose `assign=soft, select=expected_f, miss=0.1`; 011
+chose a plain global `threshold` at 0.71. With honest claim features a single cut now beats
+per-entity expected-F, which suggests the expected-F machinery had been partly compensating for
+miscalibrated competition counts rather than adding decision-theoretic value of its own.
+
+Cost on the laptop: 4 h. Blocking all 2.2M train entities was 63 min, stage-1 inference over the
+full 66M-pair frame 83 min, the rest training.
+
+One logging defect to fix: the line `claims: full-frame mean n_claims 145.517 vs sample-only 10.797
+(test is 5.549)` compares a row-weighted mean (Sum n^2 / Sum n, dominated by popular candidates)
+against a plain ratio. Apples to oranges — the like-for-like figures are 6.717 vs 5.549. The
+features themselves are correct.
+
+---
+
+## 012 — multi-retriever union: measured, gated, DROPPED
+
+Pre-registered gate (set before the measurement, `src/blocking_multi.py --measure`):
+keep a pass only if it raises the **F0.5 recall ceiling** by >= +0.002.
+30,000 train queries against 10,320,219 index records.
+
+| pass | text | analyzer | k | recall after | ceiling after | marginal |
+|---|---|---|---|---|---|---|
+| a (current) | name + address | word (1,1) | 30 | 0.9497 | 0.9895 | — |
+| + b | name only | word (1,1) | 10 | 0.9564 | 0.9910 | **+0.0015** |
+| + c | transliterated name | char_wb (3,5) | 10 | 0.9648 | 0.9928 | **+0.0018** |
+| + d | address only | word (1,1) | 5 | 0.9659 | 0.9930 | **+0.0002** |
+
+**Every pass fails its gate. Dropped.**
+
+Recall rises a real +0.0162 (0.9497 -> 0.9659), but F0.5 converts that to only
++0.0035 of ceiling, because `1.25R/(0.25+R)` is almost flat up here. Meanwhile
+the union costs +40% candidates (900k -> 1,262,528 pairs, 30.0 -> 42.1 per
+entity), which the matcher pays for in precision — the half of F0.5 that is
+weighted 4x. Pass c alone costs 9.6 min on 30k queries (554,692 char-ngram
+features); on 5.4M test queries that is the afternoon, and it invalidates every
+candidate cache, so there is no partial fallback.
+
+The decisive argument is not the cost, it is the position: we sit at **97.2% of
+the ceiling we already have**. Buying 0.0035 more ceiling while leaving 0.037 of
+matcher headroom unclaimed is the wrong trade. Revisit only if matcher
+efficiency ever clears ~99%.
+
+Kept the code and the cache (`cands_train_multiabcd_df0.01_mdf3_n30000.parquet`)
+— the measurement is the deliverable, and it is reusable.
+
+### Correction to the 011 contention figures
+
+`train_mean_n_claims 145.5` in `runs/011_v4_contention/summary.json` is a
+**row-weighted** mean (Sum n^2 / Sum n, what `.mean()` over a `transform()`
+column returns). Measured test the same way for the first time today:
+
+| | plain (pairs/record) | row-weighted (what the model sees) |
+|---|---|---|
+| train, sample-only (pre-v4) | 1.957 | 10.80 |
+| train, full frame (v4) | 6.717 | 145.5 |
+| **test** | **5.549** | **91.0** |
+
+v4 **overshoots** (1.21x plain, 1.60x row-weighted) where the old path
+undershot by 8.4x — roughly 80% of the mismatch removed, in the direction that
+matters. The residual is structural, not a bug: `n_claims ~= K * entities /
+records`, and train genuinely has more S1 entities per record than test
+(30*2.2M/10.3M = 6.41 vs 30*1.73M/9.37M = 5.54). Closing it further means
+subsampling S1 entities to test's ratio — cheap, untested, and not obviously
+worth the risk of tuning to an assumption.
+

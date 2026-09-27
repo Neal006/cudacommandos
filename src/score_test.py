@@ -23,6 +23,7 @@ source pool). 2M is sized for a 12 GB budget.
 """
 import argparse
 import gc
+import hashlib
 import pickle
 import sys
 import time
@@ -49,10 +50,13 @@ def main(a):
     log(f"loaded {run_dir/'model.pkl'}: {len(models1)} stage-1 models, "
         f"{len(models2) if models2 else 0} stage-2, decision {best}")
 
-    if models2 is not None and "rr" in feat2:
-        # predict_test_chunked cannot serve the reranker -- it needs the record
-        # tables for the whole frame, which is exactly what we refuse to build.
-        raise SystemExit("this model uses the GPU reranker; score it with run_v2.py --rerank")
+    needs_rerank = models2 is not None and "rr" in feat2
+    if needs_rerank and not a.rerank:
+        raise SystemExit("this model was trained with the band reranker; pass --rerank <dir>")
+    if a.rerank and not needs_rerank:
+        raise SystemExit("--rerank given but this model has no 'rr' feature")
+    if needs_rerank:
+        log(f"band reranker: {a.rerank}, band {a.band}")
 
     t1_, t2_, t3_ = ingest.load_split_lean("test")
     test_ids = t1_[C.ID].astype(str).tolist()
@@ -70,8 +74,23 @@ def main(a):
         f"{orphans:,} of {len(test_ids):,} got no candidates and will be written empty")
 
     t0 = time.time()
+    # Cache key: anything that changes the scores must change the filename, or
+    # a rerun silently reuses another model's predictions. The model file's
+    # size and mtime stand in for hashing 40 MB of pickle on every start.
+    mp = run_dir / "model.pkl"
+    key = hashlib.sha1(
+        f"{run_dir.name}|{mp.stat().st_size}|{int(mp.stat().st_mtime)}|"
+        f"{a.rerank}|{tuple(a.band)}|{len(t_pairs)}".encode()
+    ).hexdigest()[:12]
+    cache_p1 = C.INTERIM / f"testp1_{key}.npy"
+    cache_p = C.INTERIM / f"testp_{key}.npy"
+    log(f"score cache key {key}  (stage-1 {cache_p1.name}, final {cache_p.name})")
+
     p = predict_test_chunked(t_pairs, stats_for("test"), models1, feat1,
-                             models2, feat2, calibrator, chunk=a.chunk)
+                             models2, feat2, calibrator, chunk=a.chunk,
+                             rerank_dir=a.rerank if needs_rerank else None,
+                             band=tuple(a.band),
+                             cache_p1=cache_p1, cache_p=cache_p)
     log(f"scored {len(p):,} pairs in {(time.time()-t0)/60:.1f} min")
 
     tdf = t_pairs[["s1_id", "cand_id"]].assign(p=p)
@@ -103,4 +122,7 @@ if __name__ == "__main__":
     ap.add_argument("--run", required=True, help="run dir holding model.pkl, e.g. runs/007_v2_full")
     ap.add_argument("--chunk", type=int, default=C.TEST_CHUNK_PAIRS,
                     help="pairs per entity-aligned chunk (lower = less RAM, more overhead)")
+    ap.add_argument("--rerank", default=None, help="band reranker dir, if the model was trained with one")
+    ap.add_argument("--band", type=float, nargs=2, default=(0.2, 0.8),
+                    help="stage-1 band sent to the reranker; must match training")
     main(ap.parse_args())

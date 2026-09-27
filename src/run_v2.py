@@ -83,7 +83,8 @@ def _entity_chunks(pairs, target):
 
 
 def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibrator,
-                         chunk=4_000_000):
+                         chunk=4_000_000, rerank_dir=None, band=(0.2, 0.8),
+                         cache_p1=None, cache_p=None):
     """Score the test pairs without materializing the whole feature matrix.
 
     The unchunked path builds one frame of len(t_pairs) x n_features: at
@@ -101,6 +102,21 @@ def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibra
 
     Features are rebuilt in pass 2 rather than cached: 52M x 46 float64 is
     19 GB on disk and the rebuild costs less than that write plus read.
+
+    `rerank_dir` adds the `rr` feature per chunk. That is safe for the same
+    reason the rest of pass 2 is: band membership depends only on the pair's
+    own stage-1 score, so a chunk selects exactly the band rows it would have
+    selected in a whole-frame run, and the cross-encoder compares a pair with
+    itself -- no cross-row or cross-chunk statistic is involved. Only ~1.2% of
+    pairs are in the band, so this is minutes, not hours.
+
+    `cache_p1` / `cache_p` make this restartable. Pass 1 is ~90 minutes and
+    produces one float per pair; writing it (208 MB as float32 at 52M pairs)
+    means a rerun -- after a crash, an OOM kill, or just a changed decision
+    rule -- resumes at pass 2 instead of recomputing scores it already had.
+    `cache_p` stores the FINAL calibrated score, which is what the decision
+    layer consumes, so re-deciding costs a load rather than a 2-hour rescore.
+    Both are keyed by the caller and validated on length before use.
 
     The candidate record table is built per chunk too. record_table() over all
     9.37M test candidates is 17 string columns of Python objects, ~8 GB, and
@@ -126,15 +142,36 @@ def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibra
         X = F2.build_pair_features(sl, L, R, stats=stats, extra=True)
         return F.add_rank_features(X, sl, "core_token_sort")
 
-    p = np.empty(len(t_pairs), dtype=np.float64)
-    for n, (lo, hi) in enumerate(bounds, 1):
-        sl = t_pairs.iloc[lo:hi]
-        R = chunk_records(sl)
-        X = feats(sl, R)
-        p[lo:hi] = predict(models1, X[feat1].to_numpy())
-        del X, R
-        gc.collect()
-        log(f"  stage-1 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
+    if cache_p and Path(cache_p).exists():
+        cached = np.load(cache_p)
+        if len(cached) == len(t_pairs):
+            log(f"final scores loaded from {cache_p} -- skipping both passes")
+            return cached.astype(np.float64)
+        log(f"ignoring {cache_p}: {len(cached):,} rows, need {len(t_pairs):,}")
+
+    p = None
+    if cache_p1 and Path(cache_p1).exists():
+        cached = np.load(cache_p1)
+        if len(cached) == len(t_pairs):
+            p = cached.astype(np.float64)
+            log(f"stage-1 scores loaded from {cache_p1} -- skipping pass 1")
+        else:
+            log(f"ignoring {cache_p1}: {len(cached):,} rows, need {len(t_pairs):,}")
+
+    if p is None:
+        p = np.empty(len(t_pairs), dtype=np.float64)
+        for n, (lo, hi) in enumerate(bounds, 1):
+            sl = t_pairs.iloc[lo:hi]
+            R = chunk_records(sl)
+            X = feats(sl, R)
+            p[lo:hi] = predict(models1, X[feat1].to_numpy())
+            del X, R
+            gc.collect()
+            log(f"  stage-1 chunk {n}/{len(bounds)} rows {lo:,}-{hi:,}")
+        if cache_p1:
+            Path(cache_p1).parent.mkdir(parents=True, exist_ok=True)
+            np.save(cache_p1, p.astype(np.float32))
+            log(f"stage-1 scores cached -> {cache_p1}")
 
     if models2 is not None:
         # Only the four cand_id-grouped columns have to see the whole frame,
@@ -147,6 +184,9 @@ def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibra
             S2f = S2.build(sl, p[lo:hi], R, claims=claims.iloc[lo:hi])
             X2 = pd.concat([feats(sl, R).reset_index(drop=True),
                             S2f.reset_index(drop=True)], axis=1)
+            if rerank_dir is not None:
+                X2["rr"] = rerank_feature(rerank_dir, sl.reset_index(drop=True),
+                                          p[lo:hi], L, R, band)
             p[lo:hi] = predict(models2, X2[feat2].to_numpy())
             del X2, S2f, R
             gc.collect()
@@ -154,7 +194,12 @@ def predict_test_chunked(t_pairs, stats, models1, feat1, models2, feat2, calibra
         del claims
         gc.collect()
 
-    return calibrator.predict(p)
+    out = calibrator.predict(p)
+    if cache_p:
+        Path(cache_p).parent.mkdir(parents=True, exist_ok=True)
+        np.save(cache_p, out.astype(np.float32))
+        log(f"final scores cached -> {cache_p}")
+    return out
 
 
 def entity_f05(pairs, y, p, thr, truth_count):
@@ -191,13 +236,15 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage):
 
 
 def rerank_feature(model_dir, pairs, p1, L, R, band):
-    """Cross-encoder probability for pairs with band[0] <= p1 <= band[1]; -1 elsewhere."""
-    from gpu import reranker as RR
+    """Cross-encoder probability for pairs with band[0] <= p1 <= band[1]; -1 elsewhere.
+    The backend (e5 reranker or laya) comes from the model dir's meta.json `kind`."""
+    from gpu import reranker_module
+    RR = reranker_module(model_dir)
     m = (p1 >= band[0]) & (p1 <= band[1])
     out = np.full(len(pairs), -1.0)
     t = time.time()
     out[m] = RR.score(model_dir, RR.serialize(L, pairs.loc[m, "s1_id"]), RR.serialize(R, pairs.loc[m, "cand_id"]))
-    log(f"reranker: scored {int(m.sum()):,} band pairs ({m.mean():.1%}) in {time.time() - t:.0f}s")
+    log(f"reranker ({RR.__name__}): scored {int(m.sum()):,} band pairs ({m.mean():.1%}) in {time.time() - t:.0f}s")
     return out
 
 
@@ -327,18 +374,11 @@ def main(a):
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
     needs_rerank = models2 is not None and "rr" in feat2
-    if needs_rerank:
-        # The reranker path still needs L/R in hand for the whole frame, so it
-        # keeps the original unchunked route. Only reachable with --rerank.
-        TX, TL, TR = featurize(t_pairs, "test", stats_for("test"), extra=True)
-        p = predict(models1, TX[feat1].to_numpy())
-        TX2 = pd.concat([TX, S2.build(t_pairs, p, TR)], axis=1)
-        TX2["rr"] = rerank_feature(a.rerank, t_pairs, p, TL, TR, a.band)
-        p = calibrator.predict(predict(models2, TX2[feat2].to_numpy()))
-    else:
-        p = predict_test_chunked(t_pairs, stats_for("test"),
-                                 models1, feat1, models2, feat2, calibrator,
-                                 chunk=C.TEST_CHUNK_PAIRS)
+    p = predict_test_chunked(t_pairs, stats_for("test"),
+                             models1, feat1, models2, feat2, calibrator,
+                             chunk=C.TEST_CHUNK_PAIRS,
+                             rerank_dir=a.rerank if needs_rerank else None,
+                             band=a.band)
     tdf = t_pairs[["s1_id", "cand_id"]].assign(p=p)
     tsel = decide.apply(tdf, best)
     del tdf
@@ -369,7 +409,7 @@ if __name__ == "__main__":
     ap.add_argument("--train-only", action="store_true")
     ap.add_argument("--no-stage2", action="store_true")
     ap.add_argument("--ablate", action="store_true", help="also train on the pre-v2 features (baseline)")
-    ap.add_argument("--rerank", default=None, help="reranker model dir (src/gpu/reranker.py train)")
+    ap.add_argument("--rerank", default=None, help="reranker model dir (src/gpu/reranker.py or src/gpu/laya_rr.py train)")
     ap.add_argument("--band", type=float, nargs=2, default=(0.2, 0.8), help="stage-1 band sent to the reranker")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--run-dir", default=None)

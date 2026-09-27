@@ -1,0 +1,21 @@
+[    0.0s] run ab_e5s -> C:\Users\Priyanshu\OneDrive\Desktop\All_projects\amazon_ml_challenge\runs\ab_e5s
+[   64.9s] loading cached candidates: cands_train_k30_df0.01_mdf3_ctry1_n30000.parquet
+[   66.5s] train: 30,000 entities, 900,000 pairs, 98,439 positives, blocking recall 0.9496
+[  101.4s] features (900000, 46)
+[  154.9s] stage 1 fold 0: best_iter 923  F@0.5 train 0.9737 valid 0.9439
+[  208.4s] stage 1 fold 1: best_iter 969  F@0.5 train 0.9718 valid 0.9480
+[  262.5s] stage 1 fold 2: best_iter 982  F@0.5 train 0.9739 valid 0.9486
+[  317.5s] stage 1 fold 3: best_iter 1024  F@0.5 train 0.9748 valid 0.9434
+[  375.2s] stage 1 fold 4: best_iter 1036  F@0.5 train 0.9750 valid 0.9451
+[  398.5s] stage 1 (v2 features, global threshold): 0.9490
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|##########| 201/201 [00:00<00:00, 3526.50it/s]
+[  413.7s] reranker (gpu.reranker): scored 10,524 band pairs (1.2%) in 15s
+[  456.6s] stage 2 fold 0: best_iter 209  F@0.5 train 0.9633 valid 0.9574
+[  495.2s] stage 2 fold 1: best_iter 200  F@0.5 train 0.9603 valid 0.9603
+[  533.3s] stage 2 fold 2: best_iter 187  F@0.5 train 0.9614 valid 0.9597
+[  571.2s] stage 2 fold 3: best_iter 172  F@0.5 train 0.9619 valid 0.9589
+[  609.3s] stage 2 fold 4: best_iter 195  F@0.5 train 0.9619 valid 0.9607
+[  632.3s] stage 2 (global threshold): 0.9607
+[  653.5s] decision layer best: {'assign': 'hard', 'select': 'expected_f', 'thr': nan, 'miss': 0.0, 'f05': 0.9606988487876272}
+[  655.0s] per country: {'India': 0.9468812020871799, 'US': 0.9697228045234494}  predicted singletons 0.064  links/entity 3.19
+[  655.9s] train-only: done

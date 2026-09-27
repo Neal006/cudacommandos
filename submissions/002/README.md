@@ -1,6 +1,6 @@
 # Submission 002 — e5 band reranker
 
-**Status: READY TO UPLOAD.**
+**Status: UPLOADED. Scored 0.951.** Superseded by 003, then 004.
 
 Second submission. Its job is as much to answer a question as to score well —
 see [What this one is really for](#what-this-one-is-really-for).

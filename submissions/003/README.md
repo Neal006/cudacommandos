@@ -1,6 +1,8 @@
 # Submission 003 — 150k + e5 band reranker
 
-**Status: READY TO UPLOAD. Our best model so far.**
+**Status: UPLOADED. Scored 0.953, rank ~1760.** Our best *uploaded* model.
+Superseded offline by 004 (OOF 0.9644 against this run's 0.9626) and by
+tonight's hopeso boxes.
 
 ---
 

@@ -1,6 +1,6 @@
 # Submission 001 — first leaderboard upload
 
-**Status: READY TO UPLOAD.**
+**Status: UPLOADED. Scored 94.3, rank 934.**
 
 Our first submission. Nothing has been on the leaderboard yet, so this is the
 run that tells us whether our offline score means anything.
@@ -48,6 +48,13 @@ has seen, and we should look at it together.
 | Blocking | word TF-IDF per country, K=30, recall 0.9498 |
 | Decision layer | isotonic calibration → per-entity expected-F0.5, soft assignment |
 | Code commit | `6897207` |
+
+**Result: 94.3 against 95.32 offline — about one point of optimism.**
+
+That gap is the thing to explain, and France is the leading suspect: 15% of
+the test set, zero training labels, so no cross-validation number covers it.
+A 1-point drop is roughly what a weak 15% slice would cost. Worth measuring
+before optimizing anything else.
 
 **Expect the leaderboard to differ from 0.9532, and that is fine.** France is
 15% of the test set and has zero training labels, so no cross-validation

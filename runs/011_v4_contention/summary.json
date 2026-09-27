@@ -1,0 +1,98 @@
+{
+  "run_id": "011_v4_contention",
+  "sample": 150000,
+  "variant": "v4_full_contention",
+  "train_mean_n_claims": 145.51730346679688,
+  "train_mean_n_claims_naive": 10.796821906167409,
+  "stage1": 0.9493565426213803,
+  "stage2": 0.9643973693316513,
+  "oof_score": 0.9643947316894141,
+  "threshold_source": "oof",
+  "folds": [
+    {
+      "fold": 10,
+      "best_iter": 511,
+      "max_iter": 4000,
+      "train_score": 0.951555748109975,
+      "valid_score": 0.9453529702180058
+    },
+    {
+      "fold": 11,
+      "best_iter": 641,
+      "max_iter": 4000,
+      "train_score": 0.9491427077668991,
+      "valid_score": 0.9459386438356256
+    },
+    {
+      "fold": 12,
+      "best_iter": 509,
+      "max_iter": 4000,
+      "train_score": 0.9507549601941416,
+      "valid_score": 0.9462749981116149
+    },
+    {
+      "fold": 13,
+      "best_iter": 516,
+      "max_iter": 4000,
+      "train_score": 0.9480387752474929,
+      "valid_score": 0.9471550011110732
+    },
+    {
+      "fold": 14,
+      "best_iter": 528,
+      "max_iter": 4000,
+      "train_score": 0.9493982785032866,
+      "valid_score": 0.9454041615985106
+    },
+    {
+      "fold": 20,
+      "best_iter": 169,
+      "max_iter": 4000,
+      "train_score": 0.9649736103365398,
+      "valid_score": 0.9627683649580929
+    },
+    {
+      "fold": 21,
+      "best_iter": 179,
+      "max_iter": 4000,
+      "train_score": 0.9619000655601859,
+      "valid_score": 0.962903517967098
+    },
+    {
+      "fold": 22,
+      "best_iter": 191,
+      "max_iter": 4000,
+      "train_score": 0.9643335460617858,
+      "valid_score": 0.9626619319297262
+    },
+    {
+      "fold": 23,
+      "best_iter": 179,
+      "max_iter": 4000,
+      "train_score": 0.9628277941557051,
+      "valid_score": 0.9633671817021497
+    },
+    {
+      "fold": 24,
+      "best_iter": 166,
+      "max_iter": 4000,
+      "train_score": 0.9618075760469176,
+      "valid_score": 0.9620629550837269
+    }
+  ],
+  "blocking_recall": 0.9498125391547395,
+  "per_country": {
+    "India": 0.9513921527967054,
+    "US": 0.9730316201709306
+  },
+  "oof_pred_singleton_rate": 0.06370666666666666,
+  "oof_pred_links_per_entity": 3.2096,
+  "true_singleton_rate": 0.05628,
+  "decision": {
+    "assign": "soft",
+    "select": "threshold",
+    "thr": 0.71,
+    "miss": null,
+    "f05": 0.9643947316894141
+  }
+}
