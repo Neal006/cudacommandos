@@ -84,6 +84,36 @@ def _codes(s: pd.Series) -> np.ndarray:
     return pd.factorize(s, sort=False)[0].astype(np.int32)
 
 
+def pick_holdout(s1_ids: pd.Series, excluded: set, n: int, seed: int = C.SEED) -> set:
+    """Up to n frame entities outside `excluded`, drawn reproducibly."""
+    pool = np.array(sorted(set(s1_ids.unique()) - excluded), dtype=object)
+    if n <= 0 or not len(pool):
+        return set()
+    take = np.random.default_rng(seed).choice(len(pool), size=min(n, len(pool)), replace=False)
+    return set(pool[take])
+
+
+def entity_folds(s1_ids: pd.Series, k: int) -> np.ndarray:
+    """Row-level fold ids that never split an entity (stable across runs)."""
+    h = pd.util.hash_pandas_object(pd.Series(s1_ids.to_numpy()), index=False).to_numpy()
+    return (h % np.uint64(k)).astype(int)
+
+
+def score_holdout(pairs, p1, claims, stats, models2, feat2, rerank, band):
+    """Stage-2 fold-mean score for holdout pairs, built exactly as test is:
+    fold-mean p1, claims sliced from the whole frame, reranker on the band."""
+    X, L, R = featurize(pairs, "train", stats, extra=True)
+    X2 = pd.concat([X.reset_index(drop=True),
+                    S2.build(pairs, p1, R, claims=claims).reset_index(drop=True)], axis=1)
+    del X
+    if "rr" in feat2:
+        X2["rr"] = rerank_feature(rerank, pairs, p1, L, R, band)
+    p = predict(models2, X2[feat2].to_numpy())
+    del X2, L, R
+    gc.collect()
+    return p
+
+
 def score_frame_chunked(pairs, which, stats, models, feats, chunk, log_every=5):
     """Stage-1 score for every row of `pairs`, streaming features chunk by chunk.
 
@@ -139,8 +169,11 @@ def main(a):
     summary = {"run_id": run_id, "sample": a.sample, "variant": "v4_full_contention"}
 
     # ---------------- A. the full frame, and the sampled subset inside it
-    s1_all, s2, s3 = ingest.load_split_lean("train")
-    _, full_pairs = cached_candidates(s1_all, s2, s3, "train", None, frame_only=True)
+    # --frame N blocks only N entities (pandas sample(n, seed) is a prefix of
+    # one seeded permutation, so the --sample set is nested inside it). Full
+    # scale is the default; a small frame is for fast, local verification.
+    s1_all, s2, s3 = ingest.load_split_lean("train", sample=a.frame)
+    _, full_pairs = cached_candidates(s1_all, s2, s3, "train", a.frame, frame_only=True)
     full_pairs = full_pairs.sort_values("s1_id", kind="mergesort").reset_index(drop=True)
     log(f"full train frame: {len(full_pairs):,} pairs over {full_pairs['s1_id'].nunique():,} entities")
 
@@ -151,6 +184,24 @@ def main(a):
     sample_ids = set(s1_s[C.ID].astype(str))
     del s1_all, s2, s3, s1_s
     gc.collect()
+    if not sample_ids <= set(country_of.index):
+        raise SystemExit("--sample is not nested in --frame; use the same seed and sample <= frame")
+
+    # The reranker must never have seen a training target -- nor a holdout
+    # entity, or the holdout stops being a stand-in for test. run_v2 had this
+    # guard; v4 called rerank_feature without it.
+    rr_seen = set()
+    if a.rerank:
+        rr_seen = set((Path(a.rerank) / "entities.txt").read_text(encoding="utf-8").split())
+        leak = rr_seen & sample_ids
+        if leak:
+            raise SystemExit(f"reranker was trained on {len(leak)} entities of this sample -- "
+                             f"leakage; retrain it excluding this sample")
+
+    hold_ids = pick_holdout(full_pairs["s1_id"], sample_ids | rr_seen, a.holdout)
+    in_hold = full_pairs["s1_id"].isin(hold_ids).to_numpy()
+    log(f"holdout: {len(hold_ids):,} entities, {int(in_hold.sum()):,} pairs "
+        f"(outside the sample and the reranker's training set)")
 
     in_sample = full_pairs["s1_id"].isin(sample_ids).to_numpy()
     pairs = full_pairs[in_sample].reset_index(drop=True)
@@ -211,6 +262,10 @@ def main(a):
         f"vs sample-only {naive['n_claims'].mean():.3f} (test is 5.549)")
     summary["train_mean_n_claims"] = float(claims["n_claims"].mean())
     summary["train_mean_n_claims_naive"] = float(naive["n_claims"].mean())
+    # The holdout keeps exactly what test will have: fold-mean p1, full claims.
+    hold_pairs = full_pairs.loc[in_hold, ["s1_id", "cand_id"]].reset_index(drop=True)
+    hold_p1 = p1_full[in_hold].astype(np.float64)
+    hold_claims = claims_full[in_hold].reset_index(drop=True)
     del claims_full, p1_full, cand_codes_full, full_pairs, naive
     gc.collect()
 
@@ -246,7 +301,59 @@ def main(a):
     summary.update(oof_score=float(best["f05"]), threshold_source="oof", folds=rows1 + rows2,
                    blocking_recall=rec["pair_recall"], per_country=per_country,
                    oof_pred_singleton_rate=oof_sing, oof_pred_links_per_entity=oof_links,
-                   true_singleton_rate=float((truth_count == 0).mean()), decision=best)
+                   true_singleton_rate=float((truth_count == 0).mean()), decision_oof=best)
+    base_df.assign(p=p2_oof, fold=folds, country=pairs["s1_id"].map(country).to_numpy()) \
+        .to_parquet(run.dir / "oof_scores.parquet", index=False)
+
+    # ---------------- F2. the test-like holdout
+    # OOF differs from test in two ways CV cannot see: each OOF pair is scored
+    # by ONE fold model while test gets the MEAN of five (a smoother score
+    # distribution, so an isotonic map fitted on OOF is mis-set for test), and
+    # OOF claimants are only the sample. Holdout entities are never trained
+    # on and are scored exactly like test, so the calibrator and the decision
+    # rule are fitted there instead.
+    if len(hold_ids):
+        p2_hold = score_holdout(hold_pairs, hold_p1, hold_claims, stats, models2, feat2,
+                                a.rerank, a.band)
+        del hold_claims
+        gc.collect()
+        h_ids = sorted(hold_ids)
+        h_truth = D.read_ground_truth(C.TRAIN_GT, keep_ids=h_ids)
+        h_tc = pd.Series({k: len(h_truth.get(k, ())) for k in h_ids})
+        hy = np.fromiter((c in h_truth[s] for s, c in zip(hold_pairs["s1_id"], hold_pairs["cand_id"])),
+                         bool, len(hold_pairs)).astype(int)
+        h_country = pd.Series(country_of.reindex(h_ids).to_numpy(), index=h_ids)
+        hdf = hold_pairs.assign(y=hy)
+        hdf.assign(p=p2_hold, country=hold_pairs["s1_id"].map(h_country).to_numpy()) \
+            .to_parquet(run.dir / "holdout_scores.parquet", index=False)
+
+        # What the OOF recipe (OOF calibrator + OOF decision) scores on
+        # test-like data: this, not OOF, is the leaderboard predictor.
+        recipe_oof = decide.macro_f05(decide.apply(hdf.assign(p=calibrator.predict(p2_hold)), best), h_tc)
+        # The same recipe refitted on the holdout. Cross-fitted over holdout
+        # entities so the reported score is not flattered by its calibrator.
+        # 'none' only: the holdout lacks most claimants of its records.
+        h_fold = entity_folds(hold_pairs["s1_id"], C.N_FOLDS)
+        h_cal = decide.crossfit_calibrate(p2_hold, hy, h_fold)
+        h_best, h_table = decide.tune(hdf.assign(p=h_cal), h_tc, modes=("none",))
+        h_table.to_csv(run.dir / "decision_table_holdout.csv", index=False)
+        h_sel = decide.apply(hdf.assign(p=h_cal), h_best)
+        h_per_country = {c: decide.macro_f05(h_sel[h_sel["s1_id"].map(h_country) == c],
+                                             h_tc[h_country == c])
+                         for c in sorted(h_country.unique())}
+        log(f"holdout ({len(h_ids):,} entities): OOF recipe {recipe_oof:.4f} -> "
+            f"holdout-fitted {h_best['f05']:.4f} {h_best}  per country {h_per_country}")
+        summary.update(holdout_entities=len(h_ids), holdout_score_oof_recipe=recipe_oof,
+                       holdout_score=float(h_best["f05"]), holdout_per_country=h_per_country,
+                       decision_holdout=h_best)
+        if a.decide_on == "holdout":
+            calibrator = decide.fit_calibrator(p2_hold, hy)
+            best = h_best
+            summary["threshold_source"] = "holdout"
+        del hdf, h_sel, hold_pairs, hold_p1, p2_hold
+        gc.collect()
+    summary["decision"] = best
+    log(f"decision used for test ({summary['threshold_source']}): {best}")
     run.write_summary(**summary)
     (run.dir / "model.pkl").write_bytes(pickle.dumps(dict(
         models1=models1, models2=models2, feat1=feat1, feat2=feat2,
@@ -298,6 +405,14 @@ def main(a):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", type=int, default=C.TRAIN_SAMPLE)
+    ap.add_argument("--frame", type=int, default=None,
+                    help="block only this many train entities (default: all). The sample is "
+                         "nested inside it; small frames are for local verification")
+    ap.add_argument("--holdout", type=int, default=50000,
+                    help="test-like validation entities from the frame, outside the sample "
+                         "and the reranker's training set; 0 disables")
+    ap.add_argument("--decide-on", choices=["holdout", "oof"], default="holdout",
+                    help="fit the calibrator and decision rule on the holdout (default) or OOF")
     ap.add_argument("--rounds", type=int, default=4000,
                     help="boosting cap; fold 1 hit the default at 150k, so raise it")
     ap.add_argument("--chunk", type=int, default=1_200_000)

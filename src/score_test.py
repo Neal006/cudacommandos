@@ -92,6 +92,9 @@ def main(a):
                              band=tuple(a.band),
                              cache_p1=cache_p1, cache_p=cache_p)
     log(f"scored {len(p):,} pairs in {(time.time()-t0)/60:.1f} min")
+    # The cache is only checked on length; the sidecar records WHICH frame (row
+    # order included) it scored, so redecide/ensemble can refuse a misaligned one.
+    D.write_score_meta(cache_p, t_pairs, run=str(run_dir), rerank=a.rerank, band=list(a.band))
 
     tdf = t_pairs[["s1_id", "cand_id"]].assign(p=p)
     tsel = decide.apply(tdf, best)

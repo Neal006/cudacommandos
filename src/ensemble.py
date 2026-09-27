@@ -125,6 +125,9 @@ def main(a):
     pairs = pl.read_parquet(cands, columns=["s1_id", "cand_id"]).to_pandas()
     if len(pairs) != n:
         raise SystemExit(f"candidate frame {len(pairs):,} != scores {n:,}")
+    # Equal lengths do not prove equal row order; the sidecars do.
+    for path, _ in specs:
+        D.check_score_meta(path, pairs)
 
     _, cfg = parse_cfg(a.cfg)
     log(f"decision {cfg}")
