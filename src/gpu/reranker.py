@@ -9,7 +9,7 @@ about, and hand that score to stage 2 as a feature (src/run_v2.py --rerank).
             bf16 autocast on Ampere (RTX 3050 4-6 GB), fp32 fallback on CPU
   leakage   trained ONLY on train entities outside the GBDT sample (--exclude folds.tsv),
             so its score is a clean feature for that run's stage 2
-  mlguard   training curve goes to RunLog (metrics.jsonl) when --run-dir is given
+  runlog    training curve goes to RunLog (metrics.jsonl) when --run-dir is given
 
     python src/gpu/reranker.py train --exclude runs/<id>/folds.tsv --entities 40000 --out models/rr_e5s
     python src/gpu/reranker.py bench --model models/rr_e5s

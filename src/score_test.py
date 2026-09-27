@@ -4,7 +4,7 @@ run_v2.py has no resume: asked for a submission it retrains stages 1 and 2
 from scratch (~60 min at --sample 150000) even when the models it is about to
 rebuild are already sitting in runs/<id>/model.pkl. That is an hour of compute
 to arrive back where we started, and it gives a *different* model -- LightGBM
-is seeded, but mlguard's watch can stop a fold mid-run, so a retrain is not
+is seeded, but threads and early stopping can shift a retrain, so it is not
 guaranteed to reproduce the run whose OOF score we reported.
 
 This scores test with the exact models that produced that score:

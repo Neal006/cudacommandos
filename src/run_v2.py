@@ -1,17 +1,16 @@
 """v2 pipeline: lean ingest -> cached blocking -> vectorized features -> stage 1 ->
-stage 2 -> decision layer -> outputs. Every stage is logged for tools/mlguard.
+stage 2 -> decision layer -> outputs. Every stage is logged to runs/<id>/.
 
     python src/run_v2.py --sample 150000                 # full run: train OOF + test outputs
     python src/run_v2.py --sample 30000 --train-only     # OOF only (no test blocking)
     python src/run_v2.py --sample 30000 --train-only --ablate   # + old-features baseline
-    tools/mlguard/train_guarded.sh 004_v2 --sample 150000     # PIPELINE=src/run_v2.py
+    python src/run_v2.py --sample 150000 --run-id 004_v2
 
 Shares the candidate cache with run_pipeline.py (same key, same blobs), so a test
 cache Priyanshu already paid 4-5 h for is reused as-is.
 """
 import argparse
 import gc
-import os
 import pickle
 import time
 from pathlib import Path
@@ -208,7 +207,7 @@ def entity_f05(pairs, y, p, thr, truth_count):
 
 
 def fit_cv(X, y, pairs, folds, truth_count, run, stage, rounds=None):
-    """GroupKFold LightGBM. Returns OOF scores, fold models, mlguard fold rows.
+    """GroupKFold LightGBM. Returns OOF scores, fold models, per-fold summary rows.
     `rounds` caps boosting (default MAX_ROUNDS); passed, not patched into this module."""
     rounds = rounds or MAX_ROUNDS
     oof = np.zeros(len(X))
@@ -222,7 +221,7 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage, rounds=None):
                       callbacks=[lgb.early_stopping(100, verbose=False),
                                  run.lgb_callback(fold=int(stage * 10 + k))])
         oof[va] = m.predict(X[va], num_iteration=m.best_iteration)
-        # overfit signal for mlguard: F0.5@0.5 on a training-fold entity subsample vs the valid fold
+        # overfit signal: F0.5@0.5 on a training-fold entity subsample vs the valid fold
         tr_ents = pairs.loc[tr, "s1_id"].unique()
         sub = np.isin(pairs["s1_id"].to_numpy(), rng.choice(tr_ents, min(5000, len(tr_ents)), replace=False))
         p_tr = m.predict(X[sub], num_iteration=m.best_iteration)
@@ -265,7 +264,7 @@ def rate_stats(selected, ids, country):
 
 def main(a):
     run_id = a.run_id or time.strftime("v2_%Y%m%d_%H%M")
-    run = RunLog(a.run_dir or os.environ.get("MLGUARD_RUN_DIR") or Path(C.ROOT) / "runs" / run_id)
+    run = RunLog(a.run_dir or Path(C.ROOT) / "runs" / run_id)
     log(f"run {run_id} -> {run.dir}")
 
     # ---------------- train: candidates, labels, features

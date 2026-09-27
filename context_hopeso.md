@@ -56,7 +56,7 @@ export AMLC_WORKERS=176 AMLC_BLOCK_THREADS=176
 python src/hopeso.py build --split train
 python src/hopeso.py build --split test
 python src/run_v4.py --sample 150000 --rerank models/rr_e5s --rounds 4000 --chunk 4000000 --cands-tag hopeso --train-only
-python src/score_test.py --run runs/<id> --rerank models/rr_e5s --chunk 4000000
+python src/score_test.py --run runs/<id> --rerank models/rr_e5s --chunk 4000000 --cands-tag hopeso
 ```
 
 Upload only if the validator says PASS and links per entity per country look sane against 003.

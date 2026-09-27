@@ -52,7 +52,6 @@ Written as a separate module so run_v2.py is untouched and still runnable.
 """
 import argparse
 import gc
-import os
 import pickle
 import sys
 import time
@@ -166,7 +165,7 @@ def main(a):
     # raises it for this process only. run_v2.py on disk is untouched.
     log(f"boosting cap {a.rounds} rounds (run_v2 default {V2.MAX_ROUNDS})")
     run_id = a.run_id or time.strftime("v4_%Y%m%d_%H%M")
-    run = RunLog(Path(os.environ.get("MLGUARD_RUN_DIR") or (Path(C.ROOT) / "runs" / run_id)))
+    run = RunLog(Path(C.ROOT) / "runs" / run_id)
     log(f"run {run_id} -> {run.dir}")
     summary = {"run_id": run_id, "sample": a.sample, "variant": "v4_full_contention"}
 
