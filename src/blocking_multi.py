@@ -92,28 +92,75 @@ PASSES = {
 }
 
 
-def add_pass_columns(df, which):
-    """Attach whichever text columns the requested passes need.
+_CHUNK = 250_000
 
-    Built here rather than in normalize.add_blocking_columns so the existing
-    single-pass path keeps its memory profile: these are extra string columns
-    over ~10M records and they are only worth paying for when used.
+
+def _cols_chunk(args):
+    """Worker: every pass text column for one slice of records.
+
+    Module-level and picklable, because Windows starts pool workers with spawn.
+    All four columns are built in one pass over the slice so the records are
+    touched once rather than once per retriever.
     """
     import normalize as N
 
-    need = {PASSES[p][0] for p in which}
-    name = df[C.NAME].fillna("").astype(str)
-    addr = df[C.ADDR].fillna("").astype(str)
+    names, addrs, need = args
     out = {}
+    if "_blob" in need:
+        out["_blob"] = [f"{N.core_name(n)} {N.core_addr(a)}".strip()
+                        for n, a in zip(names, addrs)]
     if "_name_only" in need:
-        out["_name_only"] = [N.norm_name(x) for x in name]
+        out["_name_only"] = [N.norm_name(n) for n in names]
     if "_addr_only" in need:
-        out["_addr_only"] = [N.norm_addr(x) for x in addr]
+        out["_addr_only"] = [N.norm_addr(a) for a in addrs]
     if "_tl_name" in need:
         # transliterate, then strip spaces: char n-grams should not be able to
         # anchor on word boundaries that transliteration moves around.
-        out["_tl_name"] = [N.translit_core(x).replace(" ", "") for x in name]
-    return df.assign(**out) if out else df
+        out["_tl_name"] = [N.translit_core(n).replace(" ", "") for n in names]
+    return out
+
+
+def load_multi(paths, which, sample=None, seed=C.SEED, workers=None):
+    """[entity_id, country, <pass columns>] for one or more source files.
+
+    ingest.load_split_lean cannot be reused here: it drops the name and
+    address columns (that is what makes it lean), and every pass except A
+    needs them. So this reads the sources itself and builds all the columns
+    in one parallel pass.
+
+    Strings are Arrow-backed, as in ingest.blocking_frame -- about 40% of the
+    RAM of Python str objects at 10M rows, which matters when we are holding
+    up to four text columns instead of one.
+    """
+    from multiprocessing import Pool
+
+    from ingest import read_polars
+
+    workers = workers or C.WORKERS
+    need = {PASSES[p][0] for p in which}
+    frames = []
+    for path in paths:
+        df = read_polars(path)
+        if sample and sample < len(df):
+            df = df.sample(n=sample, seed=seed)
+        names, addrs = df[C.NAME].to_list(), df[C.ADDR].to_list()
+        jobs = [(names[i:i + _CHUNK], addrs[i:i + _CHUNK], need)
+                for i in range(0, len(names), _CHUNK)]
+        del names, addrs
+        if len(jobs) > 1 and workers > 1:
+            with Pool(workers) as pool:
+                parts = pool.map(_cols_chunk, jobs)
+        else:
+            parts = [_cols_chunk(j) for j in jobs]
+        del jobs
+        cols = {C.ID: pd.array(df[C.ID].to_list(), dtype="string[pyarrow]"),
+                C.COUNTRY: pd.Categorical(df[C.COUNTRY].to_list())}
+        for c in need:
+            cols[c] = pd.array([v for part in parts for v in part[c]],
+                               dtype="string[pyarrow]")
+        del parts, df
+        frames.append(pd.DataFrame(cols))
+    return pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
 
 
 def _vectorizer(corpus, analyzer, ngram_range, max_df):
@@ -152,10 +199,12 @@ def run_pass(p, s1, others, within_country=True):
     for q_df, i_df, label in parts:
         if len(q_df) == 0:
             continue
-        # _block_pair reads the column named _blob, so present this pass's
-        # text under that name rather than duplicating its chunking logic.
-        q = q_df.rename(columns={col: "_blob"}) if col != "_blob" else q_df
-        i = i_df.rename(columns={col: "_blob"}) if col != "_blob" else i_df
+        # _block_pair reads a column literally named _blob, so hand it a
+        # minimal projection with this pass's text under that name. Renaming
+        # in place would leave TWO columns called _blob whenever pass A is
+        # also in play, and df["_blob"] then returns a DataFrame.
+        q = pd.DataFrame({C.ID: q_df[C.ID].to_numpy(), "_blob": q_df[col].to_numpy()})
+        i = pd.DataFrame({C.ID: i_df[C.ID].to_numpy(), "_blob": i_df[col].to_numpy()})
         out.update(B._block_pair(q, i, vec, top_k, C.BLOCK_CHUNK, f"{p}/{label}"))
     return out
 
@@ -229,15 +278,11 @@ def measure(frame, which, truth):
 
 def generate(which, split, sample=None, measure_recall=False):
     import data as D
-    import ingest
 
-    s1, s2, s3 = ingest.load_split_lean(split, sample=sample)
-    others = pd.concat([s2, s3], ignore_index=True)
-    del s2, s3
+    p1, p2, p3 = D.source_paths(split)
+    s1 = load_multi([p1], which, sample=sample)
+    others = load_multi([p2, p3], which)
     log(f"{split}: {len(s1):,} queries, {len(others):,} index records")
-
-    s1 = add_pass_columns(s1, which)
-    others = add_pass_columns(others, which)
 
     per_pass = {}
     for p in which:

@@ -1,0 +1,2 @@
+[    0.1s] loaded runs\011_v4_contention\model.pkl: 5 stage-1 models, 5 stage-2, decision {'assign': 'soft', 'select': 'threshold', 'thr': 0.71, 'miss': nan, 'f05': 0.9643947316894141}
+[    0.1s] band reranker: models/rr_e5s, band [0.2, 0.8]

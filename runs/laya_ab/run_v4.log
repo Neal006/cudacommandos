@@ -268,3 +268,24 @@
 [ 8252.1s]   chunk 15/56 rows 16,800,000-18,000,000
 [ 8673.0s]   chunk 20/56 rows 22,800,000-24,000,000
 [ 9094.1s]   chunk 25/56 rows 28,800,000-30,000,000
+[ 9521.8s]   chunk 30/56 rows 34,800,000-36,000,000
+[ 9948.1s]   chunk 35/56 rows 40,800,010-42,000,010
+[10374.9s]   chunk 40/56 rows 46,800,033-48,000,033
+[10802.0s]   chunk 45/56 rows 52,800,048-54,000,048
+[11409.1s]   chunk 50/56 rows 58,800,048-60,000,048
+[11846.7s]   chunk 55/56 rows 64,800,048-66,000,048
+[11873.1s]   chunk 56/56 rows 66,000,048-66,204,198
+[11874.2s] full-frame stage-1 scoring done in 83.1 min
+[12004.5s] claims: full-frame mean n_claims 145.517 vs sample-only 10.797 (test is 5.549)
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|##########| 201/201 [00:00<00:00, 4963.32it/s]
+[12242.5s] reranker (gpu.reranker): scored 61,276 band pairs (1.4%) in 39s
+[12242.5s] stage 2 features (4499993, 59)
+[12538.7s] stage 2 fold 0: best_iter 169  F@0.5 train 0.9650 valid 0.9628
+[12833.8s] stage 2 fold 1: best_iter 179  F@0.5 train 0.9619 valid 0.9629
+[13251.0s] stage 2 fold 2: best_iter 191  F@0.5 train 0.9643 valid 0.9627
+[13544.5s] stage 2 fold 3: best_iter 179  F@0.5 train 0.9628 valid 0.9634
+[13979.9s] stage 2 fold 4: best_iter 166  F@0.5 train 0.9618 valid 0.9621
+[14178.5s] stage 2: 0.9644
+[14362.0s] decision layer best: {'assign': 'soft', 'select': 'threshold', 'thr': 0.71, 'miss': nan, 'f05': 0.9643947316894141}
+[14369.6s] per country: {'India': 0.9513921527967054, 'US': 0.9730316201709306}  singletons 0.064  links/entity 3.21
+[14370.6s] OOF 0.9644  (stage1 0.9494 -> stage2 0.9644)

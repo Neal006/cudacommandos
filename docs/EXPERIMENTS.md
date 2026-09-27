@@ -450,3 +450,57 @@ One logging defect to fix: the line `claims: full-frame mean n_claims 145.517 vs
 (test is 5.549)` compares a row-weighted mean (Sum n^2 / Sum n, dominated by popular candidates)
 against a plain ratio. Apples to oranges — the like-for-like figures are 6.717 vs 5.549. The
 features themselves are correct.
+
+---
+
+## 012 — multi-retriever union: measured, gated, DROPPED
+
+Pre-registered gate (set before the measurement, `src/blocking_multi.py --measure`):
+keep a pass only if it raises the **F0.5 recall ceiling** by >= +0.002.
+30,000 train queries against 10,320,219 index records.
+
+| pass | text | analyzer | k | recall after | ceiling after | marginal |
+|---|---|---|---|---|---|---|
+| a (current) | name + address | word (1,1) | 30 | 0.9497 | 0.9895 | — |
+| + b | name only | word (1,1) | 10 | 0.9564 | 0.9910 | **+0.0015** |
+| + c | transliterated name | char_wb (3,5) | 10 | 0.9648 | 0.9928 | **+0.0018** |
+| + d | address only | word (1,1) | 5 | 0.9659 | 0.9930 | **+0.0002** |
+
+**Every pass fails its gate. Dropped.**
+
+Recall rises a real +0.0162 (0.9497 -> 0.9659), but F0.5 converts that to only
++0.0035 of ceiling, because `1.25R/(0.25+R)` is almost flat up here. Meanwhile
+the union costs +40% candidates (900k -> 1,262,528 pairs, 30.0 -> 42.1 per
+entity), which the matcher pays for in precision — the half of F0.5 that is
+weighted 4x. Pass c alone costs 9.6 min on 30k queries (554,692 char-ngram
+features); on 5.4M test queries that is the afternoon, and it invalidates every
+candidate cache, so there is no partial fallback.
+
+The decisive argument is not the cost, it is the position: we sit at **97.2% of
+the ceiling we already have**. Buying 0.0035 more ceiling while leaving 0.037 of
+matcher headroom unclaimed is the wrong trade. Revisit only if matcher
+efficiency ever clears ~99%.
+
+Kept the code and the cache (`cands_train_multiabcd_df0.01_mdf3_n30000.parquet`)
+— the measurement is the deliverable, and it is reusable.
+
+### Correction to the 011 contention figures
+
+`train_mean_n_claims 145.5` in `runs/011_v4_contention/summary.json` is a
+**row-weighted** mean (Sum n^2 / Sum n, what `.mean()` over a `transform()`
+column returns). Measured test the same way for the first time today:
+
+| | plain (pairs/record) | row-weighted (what the model sees) |
+|---|---|---|
+| train, sample-only (pre-v4) | 1.957 | 10.80 |
+| train, full frame (v4) | 6.717 | 145.5 |
+| **test** | **5.549** | **91.0** |
+
+v4 **overshoots** (1.21x plain, 1.60x row-weighted) where the old path
+undershot by 8.4x — roughly 80% of the mismatch removed, in the direction that
+matters. The residual is structural, not a bug: `n_claims ~= K * entities /
+records`, and train genuinely has more S1 entities per record than test
+(30*2.2M/10.3M = 6.41 vs 30*1.73M/9.37M = 5.54). Closing it further means
+subsampling S1 entities to test's ratio — cheap, untested, and not obviously
+worth the risk of tuning to an assumption.
+

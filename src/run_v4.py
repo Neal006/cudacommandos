@@ -207,10 +207,20 @@ def main(a):
         pd.DataFrame({"cand_id": cand_codes_full}), p1_full).astype(np.float32)
     claims = claims_full[in_sample].reset_index(drop=True)
     naive = S2.build_claims(pairs[["cand_id"]], p1_oof)
-    log(f"claims: full-frame mean n_claims {claims['n_claims'].mean():.3f} "
-        f"vs sample-only {naive['n_claims'].mean():.3f} (test is 5.549)")
-    summary["train_mean_n_claims"] = float(claims["n_claims"].mean())
-    summary["train_mean_n_claims_naive"] = float(naive["n_claims"].mean())
+    # Two different means, and they are not comparable to each other. The
+    # plain mean is pairs/records. The row-weighted one is what .mean() over
+    # a transform() column gives -- Sum n^2 / Sum n -- which is what the model
+    # actually sees, because popular candidates contribute one row each time.
+    # Both test figures below were measured on the test candidate cache
+    # (51,974,499 pairs over 9,367,109 records).
+    rw, rw_naive = float(claims["n_claims"].mean()), float(naive["n_claims"].mean())
+    plain = len(pairs) / pairs["cand_id"].nunique()
+    log(f"claims  plain mean: sample-only {plain:.3f} (test 5.549)")
+    log(f"claims  row-weighted (what the model sees): full-frame {rw:.3f}, "
+        f"sample-only {rw_naive:.3f} (test 91.042)")
+    summary["train_mean_n_claims_rowweighted"] = rw
+    summary["train_mean_n_claims_naive_rowweighted"] = rw_naive
+    summary["test_mean_n_claims_rowweighted"] = 91.042
     del claims_full, p1_full, cand_codes_full, full_pairs, naive
     gc.collect()
 
