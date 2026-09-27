@@ -61,6 +61,33 @@ python src/score_test.py --run runs/<id> --rerank models/rr_e5s --chunk 4000000 
 
 Upload only if the validator says PASS and links per entity per country look sane against 003.
 
+## Lifting the limits (all knobs, no code edits)
+
+Every limit that caps recall or training is now a setting. Defaults are unchanged, so the run 011 caches still match. Any change goes into the cache file name, so a stale frame can never be reused by mistake.
+
+| Knob | Default | What it limits | Cost of raising it |
+|---|---|---|---|
+| `AMLC_VIBE="top,cap,dost,keep"` | `3,50,10,0` | sibling passes: top N candidates, biggest name pool, rare-name lookup pool, best new cands kept per entity | only `hopeso.py build` reruns, no re-blocking |
+| `AMLC_TOP_K` | 30 | base shortlist size | full re-blocking of train + test |
+| `AMLC_MAX_DF` | 0.01 | common words ignored in blocking | full re-blocking, more RAM |
+| `--sample` (or `AMLC_TRAIN_SAMPLE`) | 150000 | businesses the GBDT trains on | linear in time; keep it below about 600k so the holdout and the reranker's 40k stay disjoint |
+| `--rounds` | 2000 | boosting rounds | early stopping picks the real number |
+
+Cheapest big lever first: pick `AMLC_VIBE` from the numbers, not by guess.
+
+```
+python src/hopeso.py measure --n 30000          # recall + new cands/entity for caps 50 / 200 / 1000
+export AMLC_VIBE="5,1000,200,40"               # example: big pools searched, best 40 new kept
+python src/hopeso.py build --split train
+python src/hopeso.py build --split test
+python src/run_v4.py --sample 400000 --rounds 4000 --cands-tag hopeso ...   # same AMLC_VIBE set
+python src/score_test.py ... --cands-tag hopeso                              # same AMLC_VIBE set
+```
+
+`AMLC_VIBE` must be the same in all four commands, otherwise `load_frame` stops with "missing".
+
+What this can and cannot buy: a perfect matcher at recall R scores 1.25R/(0.25+R). Recall 0.98 gives 0.995 offline and about 0.985 on the leaderboard with the usual 0.010 gap. So lifting recall raises the ceiling, but the score itself only moves as far as the matcher follows.
+
 ## Honest expectation
 
 Recall fix is worth maybe +0.002 to +0.004, contention plus calibration maybe +0.003 to +0.008. So realistic landing is 0.958 to 0.965. Target 98 would need a different retrieval game altogether. Tests: `python tests/test_review_fixes.py`, all 8 passing.

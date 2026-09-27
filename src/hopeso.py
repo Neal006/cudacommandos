@@ -24,6 +24,7 @@ with 0 would hand the matcher a value it never saw in training.
     python src/run_v4.py ... --cands-tag hopeso           # train/score on it
 """
 import argparse
+import os
 import sys
 import time
 from multiprocessing import Pool
@@ -38,8 +39,21 @@ import config as C  # noqa: E402
 import data as D  # noqa: E402
 import normalize as N  # noqa: E402
 
-# the passes kept after `measure` (see context.md); change here, not in callers
-VIBE = dict(sib_top=3, sib_cap=50, dost_cap=10)
+# Pass settings. sib_top: siblings of the top-N base candidates; sib_cap: largest
+# (country, name-key) pool searched; dost_cap: largest pool for the direct S1 lookup
+# (0 = off); keep: best new candidates kept per entity by block_sim (0 = all).
+# Override without editing: AMLC_VIBE="top,cap,dost,keep", e.g. "5,500,50,40".
+# Every consumer imports this, and the values are in the cache name, so train,
+# test and score_test always agree on the frame.
+def _vibe():
+    raw = os.environ.get("AMLC_VIBE")
+    if not raw:
+        return dict(sib_top=3, sib_cap=50, dost_cap=10, keep=0)
+    t, c, d, k = (int(x) for x in raw.split(","))
+    return dict(sib_top=t, sib_cap=c, dost_cap=d, keep=k)
+
+
+VIBE = _vibe()
 
 
 def log(m):
@@ -156,6 +170,15 @@ def fill_sim(new: pd.DataFrame, split: str, n=None) -> np.ndarray:
     return out
 
 
+def keep_best(new: pd.DataFrame, keep: int) -> pd.DataFrame:
+    """Per entity, the `keep` new pairs with the highest block_sim (ties by cand_id,
+    so the result does not depend on row order). Bounds the pair count when the
+    pool cap is lifted, without dropping whole name pools."""
+    return (new.sort_values(["s1_id", "block_sim", "cand_id"], ascending=[True, False, True],
+                            kind="mergesort")
+            .groupby("s1_id", sort=False).head(keep).reset_index(drop=True))
+
+
 def base_frame(split: str, n=None) -> pl.DataFrame:
     path = C.INTERIM / (f"cands_{split}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
                         f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{n or 'all'}.parquet")
@@ -167,6 +190,8 @@ def base_frame(split: str, n=None) -> pl.DataFrame:
 def tag_path(split: str, n=None, tag="hopeso", vibe=VIBE) -> Path:
     """The pass settings are in the name: change VIBE and a stale frame can't be reused."""
     v = f"t{vibe['sib_top']}c{vibe['sib_cap']}d{vibe.get('dost_cap', 0)}"
+    if vibe.get("keep"):
+        v += f"k{vibe['keep']}"
     return C.INTERIM / (f"cands_{split}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
                         f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{n or 'all'}_{tag}_{v}.parquet")
 
@@ -195,7 +220,11 @@ def build(split: str, n=None):
     log(f"{split}: base {base.height:,} pairs + {len(new):,} new "
         f"({len(new) / base['s1_id'].n_unique():.2f}/entity)")
     new["block_sim"] = fill_sim(new, split, n)
-    out = (pl.concat([base.select("s1_id", "cand_id", "block_sim"),
+    if VIBE.get("keep"):
+        new = keep_best(new, VIBE["keep"])
+        log(f"keep {VIBE['keep']}: {len(new):,} new pairs left "
+            f"({len(new) / base['s1_id'].n_unique():.2f}/entity)")
+    out =(pl.concat([base.select("s1_id", "cand_id", "block_sim"),
                       pl.from_pandas(new).select("s1_id", "cand_id",
                                                  pl.col("block_sim").cast(base["block_sim"].dtype))])
            .sort("s1_id", maintain_order=True))
@@ -219,13 +248,14 @@ def measure(n: int):
     log(f"base: recall {b_hit / n_true:.4f}  ({base.height / n_ent:.1f} cands/entity)")
     rows = []
     variants = {f"sibs {key} top{t} cap{c}": sibs(base, k, key, t, c)
-                for key in ("cn", "sk") for t in (1, 3, 5) for c in (20, 50)}
+                for key in ("cn", "sk") for t in (3, 5) for c in (50, 200, 1000)}
     variants |= {f"dost {key} cap{c}": dost(s1k, k, key, c)
-                 for key in ("cn", "sk") for c in (5, 10, 20)}
+                 for key in ("cn", "sk") for c in (10, 50, 200)}
     for name, fr in variants.items():
         fr = fr.join(base.select("s1_id", "cand_id"), on=["s1_id", "cand_id"], how="anti")
         rows.append((name, hit(fr), fr.height))
-    for vibe in (VIBE, dict(VIBE, dost_cap=0), dict(VIBE, sib_top=5, dost_cap=20)):
+    for vibe in (VIBE, dict(VIBE, sib_top=5, sib_cap=200, dost_cap=50),
+                 dict(VIBE, sib_top=5, sib_cap=1000, dost_cap=200)):
         fr = extras(base, s1k, k, vibe)
         rows.append((f"UNION {vibe}", hit(fr), fr.height))
     miss = n_true - b_hit

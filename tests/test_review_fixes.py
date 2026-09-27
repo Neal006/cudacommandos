@@ -166,6 +166,23 @@ except SystemExit as e:
 print("7 ok: sibs/dost stay in-country, respect caps, extras is base-disjoint, "
       "cache name carries settings, missing tagged frame stops")
 
+# ---- 7b: lifted caps: keep_best bounds per-entity pairs, AMLC_VIBE is parsed, keep is in the name
+import os  # noqa: E402
+
+nw = pd.DataFrame({"s1_id": ["A", "A", "A", "B", "B"], "cand_id": ["x", "y", "z", "u", "v"],
+                   "block_sim": [0.1, 0.9, 0.9, 0.5, 0.2]})
+kb = hopeso.keep_best(nw, 2)
+assert list(zip(kb["s1_id"], kb["cand_id"])) == [("A", "y"), ("A", "z"), ("B", "u"), ("B", "v")], kb
+assert hopeso.keep_best(nw.iloc[::-1], 2).equals(kb), "keep_best depends on row order"
+os.environ["AMLC_VIBE"] = "5,500,50,40"
+assert hopeso._vibe() == dict(sib_top=5, sib_cap=500, dost_cap=50, keep=40)
+del os.environ["AMLC_VIBE"]
+assert hopeso._vibe() == dict(sib_top=3, sib_cap=50, dost_cap=10, keep=0), "default changed"
+assert "_t3c50d10.parquet" in p_def.name, "keep=0 must keep the old cache name"
+assert "_t5c500d50k40" in hopeso.tag_path("test", None, vibe=hopeso._vibe() | dict(
+    sib_top=5, sib_cap=500, dost_cap=50, keep=40)).name
+print("7b ok: keep_best is order-free and bounded, AMLC_VIBE parsed, keep in cache name")
+
 # ---- 8: gang features: count siblings, best OTHER sibling, ties, empty keys
 s1g = np.array(["A", "A", "A", "A", "B", "B"])
 kg = np.array(["x", "x", "y", "", "x", "x"], dtype=object)
