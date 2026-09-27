@@ -66,6 +66,17 @@ BOXES = {
             {"AMLC_RR": "e5", "AMLC_RUN_ID": "017_hopeso_e5_400k",
              "AMLC_BAND": "0.2 0.8", "AMLC_SAMPLE": "400000"},
             [("rerank", f"{S3}/rr_e5s/")], 4.0),
+    # Box big is dead: rr_e5s was trained excluding the 150k sample, so ANY
+    # larger sample contains entities it saw (4,803 at 400k) and the leak guard
+    # refuses. With this reranker the sample cannot exceed that 150k.
+    # This replaces it -- same data, same reranker, deliberately different
+    # LightGBM. Decorrelated by model rather than by data, which is the only
+    # axis still open, and unlike a reseeded copy it can also just be better.
+    "params": ("ml.m7i.48xlarge", "sm_proc_hopeso.py",
+               {"AMLC_RR": "e5", "AMLC_RUN_ID": "018_hopeso_e5_deep",
+                "AMLC_BAND": "0.2 0.8",
+                "AMLC_LGB": "num_leaves=127,learning_rate=0.03,min_data_in_leaf=20,feature_fraction=0.7"},
+               [("rerank", f"{S3}/rr_e5s/")], 3.5),
     "rr":  ("ml.g5.2xlarge", "sm_proc_rr.py", {}, [], 1.5),
 }
 

@@ -36,6 +36,16 @@ T0 = time.time()
 PARAMS = dict(objective="binary", metric="binary_logloss", learning_rate=0.05,
               num_leaves=63, min_data_in_leaf=50, feature_fraction=0.8,
               bagging_fraction=0.8, bagging_freq=1, verbosity=-1, seed=C.SEED, num_threads=0)
+# These were hand-set and never tuned. AMLC_LGB overrides them as
+# "key=value,key=value" so a run can carry a different set without a code
+# change -- useful less for tuning than for ensemble diversity: a model that
+# differs in depth and learning rate is decorrelated from the default in a way
+# a reseeded copy of the same configuration is not.
+if os.environ.get("AMLC_LGB"):
+    for _kv in os.environ["AMLC_LGB"].split(","):
+        _k, _, _v = _kv.partition("=")
+        _k, _v = _k.strip(), _v.strip()
+        PARAMS[_k] = int(_v) if _v.lstrip("-").isdigit() else float(_v)
 MAX_ROUNDS = 2000
 # Early stopping watches binary_logloss, but the objective is macro F0.5 per
 # entity. Logloss flattens long before F0.5 does, so with 100 rounds of patience
