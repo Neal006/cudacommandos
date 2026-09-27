@@ -113,6 +113,7 @@ Caches: `<DATA_DIR>/interim/*.parquet` keyed by parameters; run artefacts in `ru
 - 2026-09-26 — laya enters only as a band-reranker backend, fine-tuned, direct DecisionModel forward — 52M pairs x 7 ms is ~100 h; zero-shot useless; laya's predict() rebuilds the prompt per pair
 
 ## Changelog
+2026-09-27 | hopeso v4 + limits as settings + bge band reranker + handoff | src/{hopeso,run_v4,config,gpu/reranker}.py, tests/test_{review_fixes,reranker_cpu}.py, PIPELINE_98.md, HANDOFF_PRIYANSHU.md, context_help.md | holdout frame keeps block_sim (042c8f9); local 90k stage 2 0.9511 -> 0.9549
 2026-09-27 | remove Rust mlguard | tools/mlguard/* (deleted), .github/workflows/{mlguard->ci}.yml, tests/test_runlog.py (moved), src/runlog.py, src/run_v2.py, src/run_v4.py, src/score_test.py, docs | runlog logs only; hopeso pool caps kept (they bound pair count, not quality)
 2026-09-26 | laya band reranker (branch laya) | src/gpu/{laya_rr,__init__,reranker}.py, src/run_v2.py, tests/{test,smoke}_laya_rr.py, docs/LAYA.md, requirements.txt, .gitignore | same pairs/text/leak guard as e5; backend chosen by meta.json kind
 2026-09-26 | runs 003–005 + guard fixes | src/runlog.py, src/run_v2.py, tools/mlguard/test_runlog.py, docs/EXPERIMENTS.md, GPU_PLAN.md | stop rolls back to best iter; NaN-safe summary; reranker gain held until leak audit
