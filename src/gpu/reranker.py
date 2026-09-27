@@ -173,30 +173,52 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
         log = RunLog(run_dir)
     print(f"reranker: {len(tr_idx):,} train / {len(va_idx):,} valid pairs, {steps} steps, device {dev}, "
           f"amp {amp}, trainable {sum(p.numel() for p in params)/1e6:.1f}M params", flush=True)
-    step, t0, run_loss = 0, time.time(), []
+    step, t0, run_loss, bad_batches = 0, time.time(), [], 0
     for ep in range(epochs):
         model.train()
         for ix, xa, xb in _batches(a, b, bs, rng.permutation(tr_idx)):
             enc = tok(xa, xb, truncation=True, max_length=MAX_LEN, padding=True, return_tensors="pt").to(dev)
             tgt = torch.from_numpy(y[ix]).to(dev)
             with torch.autocast(device_type=dev, dtype=amp, enabled=amp is not None):
-                loss = lossf(model(**enc).logits.squeeze(-1).float(), tgt)
+                z = model(**enc).logits.squeeze(-1).float()
+            # fp16 caps at 65504 and a T4 has no bf16, so an activation that is
+            # fine on Ampere can come back inf here. .float() preserves the inf,
+            # so clamp before the loss: sigmoid(30) is 1 - 1e-13, which makes
+            # this free in every case that is not already broken.
+            z = torch.nan_to_num(z, nan=0.0, posinf=LOGIT_CLAMP, neginf=-LOGIT_CLAMP)                      .clamp_(-LOGIT_CLAMP, LOGIT_CLAMP)
+            loss = lossf(z, tgt)
+            if not torch.isfinite(loss):
+                # Never step on a non-finite loss: one such backward writes nan
+                # into every trainable weight and the run cannot recover.
+                bad_batches += 1
+                if bad_batches <= 5 or bad_batches % 100 == 0:
+                    print(f"  skipped non-finite loss at step {step} ({bad_batches} so far)", flush=True)
+                opt.zero_grad(set_to_none=True)
+                sched.step()
+                step += 1
+                continue
             opt.zero_grad(set_to_none=True)
             if scaler:
-                scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                torch.nn.utils.clip_grad_norm_(params, 1.0)
+                scaler.step(opt)
+                scaler.update()
             else:
-                loss.backward(); opt.step()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(params, 1.0)
+                opt.step()
             sched.step()
             run_loss.append(loss.item())
             step += 1
             if step % 200 == 0 or step == steps:
-                vl, _ = _eval(tok, model, a, b, y_ev, va_idx[:4000])
+                vl, _ = _eval(tok, model, a, b, y_ev, va_idx[:4000], bs=min(bs, 64))
                 tl = float(np.mean(run_loss[-200:]))
                 print(f"  step {step}/{steps}  train {tl:.4f}  valid {vl:.4f}  {step*bs/(time.time()-t0):,.0f} pairs/s", flush=True)
                 if log:
                     log.tick(fold=0, iter=step, train_loss=tl, valid_loss=vl)
                 model.train()
-    vl, auc = _eval(tok, model, a, b, y_ev, va_idx)
+    vl, auc = _eval(tok, model, a, b, y_ev, va_idx, bs=min(bs, 64))
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out)
@@ -208,29 +230,44 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
         (out / "entities.txt").write_text("\n".join(sorted(set(map(str, groups)))), encoding="utf-8")
     if log:
         log.end()
+    if bad_batches:
+        print(f"reranker: WARNING {bad_batches} of {steps} batches skipped for a non-finite "
+              f"loss. On a GPU without bf16 (T4/Turing) try AMLC_AMP=fp32, or lower --bs.",
+              flush=True)
     print(f"reranker saved -> {out}  valid logloss {vl:.4f}  AUC {auc:.4f}", flush=True)
     return meta
 
 
-def _eval(tok, model, a, b, y, idx):
+def _eval(tok, model, a, b, y, idx, bs=256):
     from sklearn.metrics import log_loss, roc_auc_score
     if len(idx) == 0:
         return float("nan"), float("nan")
-    p = _score(tok, model, a[idx], b[idx])
+    p = _score(tok, model, a[idx], b[idx], bs=bs)
     auc = roc_auc_score(y[idx], p) if 0 < y[idx].mean() < 1 else float("nan")
     return float(log_loss(y[idx], np.clip(p, 1e-7, 1 - 1e-7), labels=[0, 1])), float(auc)
+
+
+# Log-odds beyond this are meaningless (sigmoid(30) = 1 - 1e-13) and are the
+# signature of fp16 overflow rather than confidence.
+LOGIT_CLAMP = 30.0
 
 
 def _score(tok, model, a, b, bs=256):
     torch, dev, amp = _torch()
     model.eval()
-    order = np.argsort([len(x) + len(z) for x, z in zip(a, b)])   # length-bucketed batches: less padding
+    # Length bucketing cuts padding, but it also puts the LONGEST sequences in
+    # the same batches -- the largest activations and the largest VRAM spike.
+    # That is why a run can train happily for 200 random batches and then die
+    # on the first validation pass.
+    order = np.argsort([len(x) + len(z) for x, z in zip(a, b)])
     out = np.empty(len(a), dtype=np.float32)
     with torch.inference_mode():
         for ix, xa, xb in _batches(list(a), list(b), bs, order):
             enc = tok(xa, xb, truncation=True, max_length=MAX_LEN, padding=True, return_tensors="pt").to(dev)
             with torch.autocast(device_type=dev, dtype=amp, enabled=amp is not None):
-                out[ix] = torch.sigmoid(model(**enc).logits.squeeze(-1).float()).cpu().numpy()
+                z = model(**enc).logits.squeeze(-1).float()
+            z = torch.nan_to_num(z, nan=0.0, posinf=LOGIT_CLAMP, neginf=-LOGIT_CLAMP)
+            out[ix] = torch.sigmoid(z).cpu().numpy()
     return out
 
 

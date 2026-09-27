@@ -1,22 +1,60 @@
-"""SageMaker wrapper for src/gpu/laya_rr.py — GPU fine-tuning entry point.
+"""SageMaker GPU entry point: fine-tune the e5 band reranker on a T4.
 
-Wraps the fetch + train subcommands via subprocess (same reason as the CPU
-train_entry.py: SageMaker's automatic hyperparameter->CLI conversion doesn't
-know about laya_rr.py's argparse subcommands).
+WHY e5 AND NOT laya
+-------------------
+We ran them head to head -- same band, same 514,335 training pairs, same valid
+split, same 30k GBDT sample, only the model swapped:
+
+                    baseline     laya       e5
+    decision         0.9512     0.9608    0.9607
+    India            0.9369     0.9460    0.9469     <- e5 wins
+    train time          --      132 min    23 min
+
+laya (mmBERT-base, 322M) lost on India -- the metric its hypothesis was built
+to win -- at 5.8x the training cost. Its premise was that e5 handles
+native-script names poorly, but the incumbent is intfloat/multilingual-e5-small,
+already multilingual, so the A/B was multilingual against multilingual.
+
+The reranker itself is worth having: submission 002 (30k GBDT + e5 reranker)
+scored 0.951 on the leaderboard against 001's 0.943 without it, using a
+*weaker* GBDT. So fine-tuning e5 is the sensible use of GPU hours.
+
+WHY THIS FILE IS SHAPED FOR A T4
+--------------------------------
+ml.g4dn.xlarge is a T4: sm_75 Turing, no bfloat16. bf16 carries fp32's
+exponent range and cannot overflow; fp16 tops out at 65504. Everything was
+developed on an RTX 3050 (sm_86, bf16), so that ceiling was never hit and the
+code silently relied on it.
+
+The scoring path length-buckets its batches, which puts the longest sequences
+together -- the largest activations the model ever sees. That is why a run
+trains fine for 200 random batches and then dies on the first validation pass.
+Full explanation in docs/T4_FIX.md.
+
+This entry point reports the GPU it actually got, pins the autocast dtype, and
+sizes the batch for 16 GB.
 """
 import os
 import subprocess
 import sys
 
-# SageMaker mounts the "training" channel (same dataset S3 path reused from
-# stage 1) at this path, and the "runinfo" channel (folds.tsv) here:
+# SageMaker channels: the dataset (reused from the CPU stage) and folds.tsv
+# from the stage-1 run. folds.tsv is the leak guard -- the reranker must not
+# train on any entity the GBDT will be evaluated on.
 os.environ["AMLC_DATA_DIR"] = os.environ["SM_CHANNEL_TRAINING"]
 FOLDS_PATH = os.path.join(os.environ["SM_CHANNEL_RUNINFO"], "folds.tsv")
 
 MODEL_DIR = os.environ["SM_MODEL_DIR"]
-OUT_DIR = os.path.join(MODEL_DIR, "rr_laya")
+OUT_DIR = os.path.join(MODEL_DIR, "rr_e5s")
 
 CODE_DIR = "/opt/ml/code"  # SageMaker unpacks source_dir here
+
+# Overridable as SageMaker hyperparameters or plain env vars.
+ENTITIES = os.environ.get("AMLC_ENTITIES", "40000")
+BS = os.environ.get("AMLC_BS", "32")
+LR = os.environ.get("AMLC_LR", "3e-5")
+EPOCHS = os.environ.get("AMLC_EPOCHS", "2")
+AUGMENT = os.environ.get("AMLC_AUGMENT", "0.3")
 
 
 def run(cmd):
@@ -26,58 +64,52 @@ def run(cmd):
 
 
 def gpu_report():
-    """Print what we are actually on, and pick a safe autocast dtype.
-
-    This is the difference between the boxes. An RTX 3050 is sm_86 and has
-    bf16, whose exponent range matches fp32 -- activations cannot overflow it.
-    A T4 (ml.g4dn.xlarge) is sm_75: no bf16, so the code falls back to fp16,
-    which tops out at 65504. Long sequences in a length-bucketed validation
-    batch are exactly where that ceiling gets hit, which is why a run that is
-    fine on Ampere produces NaN on Turing at the first validation.
-
-    The clamp in laya_rr._logit_diff makes fp16 survivable. AMLC_AMP=fp32 is
-    the belt-and-braces option: slower, more memory, cannot overflow.
-    """
+    """Report the GPU and pin the autocast dtype for the child process."""
     try:
         import torch
     except ImportError:
+        print("[train_entry_gpu] WARNING: torch not importable here", flush=True)
         return
     if not torch.cuda.is_available():
-        print("[train_entry_gpu] WARNING: no CUDA device", flush=True)
+        print("[train_entry_gpu] WARNING: no CUDA device -- this will be very slow", flush=True)
         return
     name = torch.cuda.get_device_name(0)
-    cap = torch.cuda.get_device_capability(0)
+    major, minor = torch.cuda.get_device_capability(0)
     bf16 = torch.cuda.is_bf16_supported()
-    total = torch.cuda.get_device_properties(0).total_memory / 1e9
-    print(f"[train_entry_gpu] GPU {name} sm_{cap[0]}{cap[1]} "
-          f"{total:.1f} GB  bf16={bf16}", flush=True)
+    gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    print(f"[train_entry_gpu] GPU {name}  sm_{major}{minor}  {gb:.1f} GB  bf16={bf16}", flush=True)
     if not bf16 and "AMLC_AMP" not in os.environ:
         os.environ["AMLC_AMP"] = "fp16"
-        print("[train_entry_gpu] no bf16 on this GPU -> fp16 autocast with logit "
-              "clamping. If you still see non-finite losses, rerun with "
-              "AMLC_AMP=fp32 (slower, cannot overflow).", flush=True)
+        print("[train_entry_gpu] no bf16 on this GPU (Turing) -> fp16 autocast, with logit "
+              "clamping and non-finite-batch skipping. If the run reports many skipped "
+              "batches, rerun with AMLC_AMP=fp32 (slower, cannot overflow).", flush=True)
 
 
 if __name__ == "__main__":
     gpu_report()
+    print(f"[train_entry_gpu] leak guard: {FOLDS_PATH}", flush=True)
+    if not os.path.exists(FOLDS_PATH):
+        raise SystemExit(
+            f"folds.tsv not found at {FOLDS_PATH}.\n"
+            f"The GPU stage needs the CPU stage's folds.tsv on the 'runinfo' channel: it is "
+            f"what stops the reranker training on entities the GBDT is scored on. Without it "
+            f"any gain it shows is untrustworthy, so this refuses rather than guessing."
+        )
 
-    # 1. fetch the base laya checkpoint (~640MB, idempotent)
-    run([sys.executable, "src/gpu/laya_rr.py", "fetch"])
-
-    # 2. the actual fine-tune. --train-layers -1 per your call; entities=40000
-    #    matches docs/LAYA.md's example command.
     run([
-        sys.executable, "src/gpu/laya_rr.py", "train",
+        sys.executable, "src/gpu/reranker.py", "train",
         "--exclude", FOLDS_PATH,
-        "--entities", "40000",
+        "--entities", ENTITIES,
         "--out", OUT_DIR,
-        "--train-layers", "-1",
-        "--lr", "1e-5",
-        # A T4 is 16 GB, but --train-layers -1 makes all 322M parameters
-        # trainable: fp32 master weights + grads + two AdamW moments is ~5 GB
-        # before activations. Keep the batch modest; raise it only if the run
-        # reports headroom.
-        "--bs", os.environ.get("AMLC_BS", "16"),
+        "--bs", BS,
+        "--lr", LR,
+        "--epochs", EPOCHS,
+        # ft_data.augment_train perturbs TRAIN rows only, never valid ones.
+        # e5-small has 22M trainable parameters against a lot of pairs, so a
+        # little regularisation is cheap insurance against memorising the band.
+        "--augment", AUGMENT,
     ])
 
-    print("[train_entry_gpu] done.", flush=True)
+    print(f"[train_entry_gpu] done -> {OUT_DIR}", flush=True)
+    print("[train_entry_gpu] compare meta.json against our current rr_e5s "
+          "(valid_auc 0.99907, valid_logloss 0.03339) before adopting it.", flush=True)
