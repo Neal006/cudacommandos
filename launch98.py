@@ -56,6 +56,16 @@ BOXES = {
              {"AMLC_RR": "e5", "AMLC_RUN_ID": "016_hopeso_e5_long",
               "AMLC_BAND": "0.2 0.8", "AMLC_ES_ROUNDS": "500"},
              [("rerank", f"{S3}/rr_e5s/")], 3.5),
+    # TRAIN_SAMPLE was 150k because the laptop had 24 GB, not because 150k is
+    # right. 30k -> 150k bought stage 2 +0.0018; this reverses the same
+    # compromise again on a 768 GB box. It reuses every candidate cache --
+    # only the number of entities trained on changes -- unlike raising TOP_K,
+    # which would invalidate all of them for a measured +0.002 of a ceiling we
+    # are 3.7 points below.
+    "big": ("ml.m7i.48xlarge", "sm_proc_hopeso.py",
+            {"AMLC_RR": "e5", "AMLC_RUN_ID": "017_hopeso_e5_400k",
+             "AMLC_BAND": "0.2 0.8", "AMLC_SAMPLE": "400000"},
+            [("rerank", f"{S3}/rr_e5s/")], 4.0),
     "rr":  ("ml.g5.2xlarge", "sm_proc_rr.py", {}, [], 1.5),
 }
 
