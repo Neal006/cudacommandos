@@ -87,7 +87,23 @@ def rerank_dir():
     ch = IN / "rerank"
     if not ch.is_dir():
         sys.exit(f"[hopeso-box] AMLC_RR={RR} but no rerank channel mounted")
-    # the channel may mount the model dir itself or its parent
+    # A model trained by a SageMaker TRAINING job arrives as output.tar.gz, not
+    # a directory -- the GPU boxes have to be training jobs because their
+    # processing quota is 0. Unpack in place rather than round-tripping 1.6 GB
+    # through a laptop to re-upload it as loose files.
+    tars = sorted(ch.glob("*.tar.gz"))
+    if tars and not any(ch.rglob("meta.json")):
+        import tarfile
+        dest = WORK / "rerank_unpacked"
+        dest.mkdir(parents=True, exist_ok=True)
+        for t in tars:
+            log(f"unpacking {t.name} ({t.stat().st_size/1e6:.0f} MB)")
+            with tarfile.open(t) as tf:
+                tf.extractall(dest)
+        ch = dest
+    metas = sorted(ch.rglob("meta.json"))
+    if len(metas) == 1:
+        return metas[0].parent
     if (ch / "meta.json").exists():
         return ch
     inner = [d for d in ch.iterdir() if d.is_dir() and (d / "meta.json").exists()]
