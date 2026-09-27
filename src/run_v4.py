@@ -84,6 +84,20 @@ def _codes(s: pd.Series) -> np.ndarray:
     return pd.factorize(s, sort=False)[0].astype(np.int32)
 
 
+def load_frame(s1, s2, s3, split, n, tag):
+    """Base blocker frame, or the base ∪ hopeso-passes frame when `tag` is set.
+    The tagged frame is built beforehand by `python src/hopeso.py build`."""
+    if not tag:
+        return cached_candidates(s1, s2, s3, split, n, frame_only=True)[1]
+    import hopeso
+    path = hopeso.tag_path(split, n, tag)
+    if not path.exists():
+        raise SystemExit(f"{path.name} missing -- run: python src/hopeso.py build "
+                         f"--split {split}" + (f" --n {n}" if n else ""))
+    log(f"loading tagged candidates: {path.name}")
+    return pd.read_parquet(path)
+
+
 def pick_holdout(s1_ids: pd.Series, excluded: set, n: int, seed: int = C.SEED) -> set:
     """Up to n frame entities outside `excluded`, drawn reproducibly."""
     pool = np.array(sorted(set(s1_ids.unique()) - excluded), dtype=object)
@@ -173,7 +187,7 @@ def main(a):
     # one seeded permutation, so the --sample set is nested inside it). Full
     # scale is the default; a small frame is for fast, local verification.
     s1_all, s2, s3 = ingest.load_split_lean("train", sample=a.frame)
-    _, full_pairs = cached_candidates(s1_all, s2, s3, "train", a.frame, frame_only=True)
+    full_pairs = load_frame(s1_all, s2, s3, "train", a.frame, a.cands_tag)
     full_pairs = full_pairs.sort_values("s1_id", kind="mergesort").reset_index(drop=True)
     log(f"full train frame: {len(full_pairs):,} pairs over {full_pairs['s1_id'].nunique():,} entities")
 
@@ -371,7 +385,7 @@ def main(a):
     t1_, t2_, t3_ = ingest.load_split_lean("test")
     test_ids = t1_[C.ID].astype(str).tolist()
     t_country = pd.Series(t1_[C.COUNTRY].astype(str).to_numpy(), index=test_ids)
-    _, t_pairs = cached_candidates(t1_, t2_, t3_, "test", None, frame_only=True)
+    t_pairs = load_frame(t1_, t2_, t3_, "test", None, a.cands_tag)
     del t1_, t2_, t3_
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
@@ -411,6 +425,8 @@ if __name__ == "__main__":
     ap.add_argument("--holdout", type=int, default=50000,
                     help="test-like validation entities from the frame, outside the sample "
                          "and the reranker's training set; 0 disables")
+    ap.add_argument("--cands-tag", default=None,
+                    help="use the tagged candidate frame (e.g. 'hopeso' from src/hopeso.py build)")
     ap.add_argument("--decide-on", choices=["holdout", "oof"], default="holdout",
                     help="fit the calibrator and decision rule on the holdout (default) or OOF")
     ap.add_argument("--rounds", type=int, default=4000,
