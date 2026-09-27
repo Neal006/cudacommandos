@@ -1,0 +1,155 @@
+[    0.1s] loaded runs\010_150k_rr\model.pkl: 5 stage-1 models, 5 stage-2, decision {'assign': 'soft', 'select': 'expected_f', 'thr': nan, 'miss': 0.0, 'f05': 0.9626474013262384}
+[    0.1s] band reranker: models/rr_e5s, band (0.2, 0.8)
+[  113.1s] loading cached candidates: cands_test_k30_df0.01_mdf3_ctry1_nall.parquet
+[  132.8s] test: 51,974,499 pairs over 1,732,494 entities; 50 of 1,732,544 got no candidates and will be written empty
+[  132.8s] score cache key f550ffb02552  (stage-1 testp1_f550ffb02552.npy, final testp_f550ffb02552.npy)
+[  210.7s] test scoring in 44 entity-aligned chunks of ~1,200,000 pairs (L 1,732,494 records, source pool 9,969,589)
+[  310.4s]   stage-1 chunk 1/44 rows 0-1,200,000
+[  411.0s]   stage-1 chunk 2/44 rows 1,200,000-2,400,000
+[  512.4s]   stage-1 chunk 3/44 rows 2,400,000-3,600,025
+[  614.1s]   stage-1 chunk 4/44 rows 3,600,025-4,800,045
+[  715.5s]   stage-1 chunk 5/44 rows 4,800,045-6,000,074
+[  816.8s]   stage-1 chunk 6/44 rows 6,000,074-7,200,087
+[  918.6s]   stage-1 chunk 7/44 rows 7,200,087-8,400,113
+[ 1019.8s]   stage-1 chunk 8/44 rows 8,400,113-9,600,113
+[ 1121.7s]   stage-1 chunk 9/44 rows 9,600,113-10,800,117
+[ 1223.0s]   stage-1 chunk 10/44 rows 10,800,117-12,000,132
+[ 1325.8s]   stage-1 chunk 11/44 rows 12,000,132-13,200,151
+[ 1427.0s]   stage-1 chunk 12/44 rows 13,200,151-14,400,171
+[ 1528.1s]   stage-1 chunk 13/44 rows 14,400,171-15,600,191
+[ 1629.7s]   stage-1 chunk 14/44 rows 15,600,191-16,800,191
+[ 1732.1s]   stage-1 chunk 15/44 rows 16,800,191-18,000,201
+[ 1833.3s]   stage-1 chunk 16/44 rows 18,000,201-19,200,201
+[ 1934.8s]   stage-1 chunk 17/44 rows 19,200,201-20,400,201
+[ 2037.2s]   stage-1 chunk 18/44 rows 20,400,201-21,600,201
+[ 2138.3s]   stage-1 chunk 19/44 rows 21,600,201-22,800,220
+[ 2239.4s]   stage-1 chunk 20/44 rows 22,800,220-24,000,242
+[ 2340.9s]   stage-1 chunk 21/44 rows 24,000,242-25,200,270
+[ 2443.0s]   stage-1 chunk 22/44 rows 25,200,270-26,400,270
+[ 2544.5s]   stage-1 chunk 23/44 rows 26,400,270-27,600,270
+[ 2645.9s]   stage-1 chunk 24/44 rows 27,600,270-28,800,279
+[ 2747.5s]   stage-1 chunk 25/44 rows 28,800,279-30,000,279
+[ 2848.9s]   stage-1 chunk 26/44 rows 30,000,279-31,200,279
+[ 2950.1s]   stage-1 chunk 27/44 rows 31,200,279-32,400,305
+[ 3052.0s]   stage-1 chunk 28/44 rows 32,400,305-33,600,331
+[ 3154.2s]   stage-1 chunk 29/44 rows 33,600,331-34,800,352
+[ 3255.9s]   stage-1 chunk 30/44 rows 34,800,352-36,000,352
+[ 3357.3s]   stage-1 chunk 31/44 rows 36,000,352-37,200,381
+[ 3459.0s]   stage-1 chunk 32/44 rows 37,200,381-38,400,381
+[ 3560.7s]   stage-1 chunk 33/44 rows 38,400,381-39,600,381
+[ 3662.2s]   stage-1 chunk 34/44 rows 39,600,381-40,800,385
+[ 3763.6s]   stage-1 chunk 35/44 rows 40,800,385-42,000,385
+[ 3866.4s]   stage-1 chunk 36/44 rows 42,000,385-43,200,402
+[ 3967.6s]   stage-1 chunk 37/44 rows 43,200,402-44,400,431
+[ 4068.8s]   stage-1 chunk 38/44 rows 44,400,431-45,600,444
+[ 4170.3s]   stage-1 chunk 39/44 rows 45,600,444-46,800,459
+[ 4271.2s]   stage-1 chunk 40/44 rows 46,800,459-48,000,488
+[ 4372.3s]   stage-1 chunk 41/44 rows 48,000,488-49,200,488
+[ 4473.8s]   stage-1 chunk 42/44 rows 49,200,488-50,400,494
+[ 4576.6s]   stage-1 chunk 43/44 rows 50,400,494-51,600,494
+[ 4618.5s]   stage-1 chunk 44/44 rows 51,600,494-51,974,499
+[ 4621.5s] stage-1 scores cached -> D:\amlc_data\interim\testp1_f550ffb02552.npy
+[ 4746.3s] stage-2 claim features built globally: (51974499, 4)
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|##########| 201/201 [00:00<00:00, 2445.92it/s]
+[ 4830.3s] reranker (gpu.reranker): scored 20,499 band pairs (1.7%) in 20s
+[ 4834.8s]   stage-2 chunk 1/44 rows 0-1,200,000
+[ 4909.7s] reranker (gpu.reranker): scored 20,446 band pairs (1.7%) in 9s
+[ 4914.5s]   stage-2 chunk 2/44 rows 1,200,000-2,400,000
+[ 4989.0s] reranker (gpu.reranker): scored 20,650 band pairs (1.7%) in 9s
+[ 4993.6s]   stage-2 chunk 3/44 rows 2,400,000-3,600,025
+[ 5067.9s] reranker (gpu.reranker): scored 20,452 band pairs (1.7%) in 9s
+[ 5072.4s]   stage-2 chunk 4/44 rows 3,600,025-4,800,045
+[ 5147.7s] reranker (gpu.reranker): scored 20,320 band pairs (1.7%) in 9s
+[ 5152.3s]   stage-2 chunk 5/44 rows 4,800,045-6,000,074
+[ 5227.4s] reranker (gpu.reranker): scored 20,565 band pairs (1.7%) in 9s
+[ 5232.0s]   stage-2 chunk 6/44 rows 6,000,074-7,200,087
+[ 5307.8s] reranker (gpu.reranker): scored 20,696 band pairs (1.7%) in 10s
+[ 5312.4s]   stage-2 chunk 7/44 rows 7,200,087-8,400,113
+[ 5387.8s] reranker (gpu.reranker): scored 20,767 band pairs (1.7%) in 9s
+[ 5392.3s]   stage-2 chunk 8/44 rows 8,400,113-9,600,113
+[ 5466.9s] reranker (gpu.reranker): scored 20,636 band pairs (1.7%) in 9s
+[ 5471.4s]   stage-2 chunk 9/44 rows 9,600,113-10,800,117
+[ 5546.9s] reranker (gpu.reranker): scored 20,576 band pairs (1.7%) in 10s
+[ 5551.5s]   stage-2 chunk 10/44 rows 10,800,117-12,000,132
+[ 5628.0s] reranker (gpu.reranker): scored 20,388 band pairs (1.7%) in 9s
+[ 5632.5s]   stage-2 chunk 11/44 rows 12,000,132-13,200,151
+[ 5707.2s] reranker (gpu.reranker): scored 20,541 band pairs (1.7%) in 9s
+[ 5711.7s]   stage-2 chunk 12/44 rows 13,200,151-14,400,171
+[ 5787.4s] reranker (gpu.reranker): scored 20,657 band pairs (1.7%) in 10s
+[ 5792.0s]   stage-2 chunk 13/44 rows 14,400,171-15,600,191
+[ 5867.3s] reranker (gpu.reranker): scored 20,606 band pairs (1.7%) in 9s
+[ 5871.9s]   stage-2 chunk 14/44 rows 15,600,191-16,800,191
+[ 5947.6s] reranker (gpu.reranker): scored 20,676 band pairs (1.7%) in 9s
+[ 5952.1s]   stage-2 chunk 15/44 rows 16,800,191-18,000,201
+[ 6027.3s] reranker (gpu.reranker): scored 20,477 band pairs (1.7%) in 9s
+[ 6031.8s]   stage-2 chunk 16/44 rows 18,000,201-19,200,201
+[ 6106.9s] reranker (gpu.reranker): scored 20,392 band pairs (1.7%) in 9s
+[ 6111.5s]   stage-2 chunk 17/44 rows 19,200,201-20,400,201
+[ 6186.3s] reranker (gpu.reranker): scored 20,635 band pairs (1.7%) in 10s
+[ 6190.8s]   stage-2 chunk 18/44 rows 20,400,201-21,600,201
+[ 6266.1s] reranker (gpu.reranker): scored 20,800 band pairs (1.7%) in 10s
+[ 6270.7s]   stage-2 chunk 19/44 rows 21,600,201-22,800,220
+[ 6346.9s] reranker (gpu.reranker): scored 20,690 band pairs (1.7%) in 10s
+[ 6351.5s]   stage-2 chunk 20/44 rows 22,800,220-24,000,242
+[ 6426.4s] reranker (gpu.reranker): scored 20,654 band pairs (1.7%) in 10s
+[ 6431.0s]   stage-2 chunk 21/44 rows 24,000,242-25,200,270
+[ 6506.3s] reranker (gpu.reranker): scored 20,272 band pairs (1.7%) in 9s
+[ 6510.8s]   stage-2 chunk 22/44 rows 25,200,270-26,400,270
+[ 6586.2s] reranker (gpu.reranker): scored 20,475 band pairs (1.7%) in 9s
+[ 6590.8s]   stage-2 chunk 23/44 rows 26,400,270-27,600,270
+[ 6665.8s] reranker (gpu.reranker): scored 20,338 band pairs (1.7%) in 9s
+[ 6670.3s]   stage-2 chunk 24/44 rows 27,600,270-28,800,279
+[ 6745.8s] reranker (gpu.reranker): scored 20,549 band pairs (1.7%) in 9s
+[ 6750.4s]   stage-2 chunk 25/44 rows 28,800,279-30,000,279
+[ 6825.6s] reranker (gpu.reranker): scored 20,865 band pairs (1.7%) in 10s
+[ 6830.1s]   stage-2 chunk 26/44 rows 30,000,279-31,200,279
+[ 6905.3s] reranker (gpu.reranker): scored 20,791 band pairs (1.7%) in 10s
+[ 6909.9s]   stage-2 chunk 27/44 rows 31,200,279-32,400,305
+[ 6985.4s] reranker (gpu.reranker): scored 20,509 band pairs (1.7%) in 9s
+[ 6990.0s]   stage-2 chunk 28/44 rows 32,400,305-33,600,331
+[ 7066.0s] reranker (gpu.reranker): scored 20,610 band pairs (1.7%) in 9s
+[ 7070.6s]   stage-2 chunk 29/44 rows 33,600,331-34,800,352
+[ 7146.3s] reranker (gpu.reranker): scored 20,633 band pairs (1.7%) in 9s
+[ 7151.0s]   stage-2 chunk 30/44 rows 34,800,352-36,000,352
+[ 7229.6s] reranker (gpu.reranker): scored 20,371 band pairs (1.7%) in 9s
+[ 7234.7s]   stage-2 chunk 31/44 rows 36,000,352-37,200,381
+[ 7311.0s] reranker (gpu.reranker): scored 20,467 band pairs (1.7%) in 9s
+[ 7315.6s]   stage-2 chunk 32/44 rows 37,200,381-38,400,381
+[ 7391.5s] reranker (gpu.reranker): scored 20,710 band pairs (1.7%) in 9s
+[ 7396.1s]   stage-2 chunk 33/44 rows 38,400,381-39,600,381
+[ 7471.7s] reranker (gpu.reranker): scored 20,325 band pairs (1.7%) in 9s
+[ 7476.3s]   stage-2 chunk 34/44 rows 39,600,381-40,800,385
+[ 7552.0s] reranker (gpu.reranker): scored 20,649 band pairs (1.7%) in 10s
+[ 7556.6s]   stage-2 chunk 35/44 rows 40,800,385-42,000,385
+[ 7632.0s] reranker (gpu.reranker): scored 20,724 band pairs (1.7%) in 9s
+[ 7636.6s]   stage-2 chunk 36/44 rows 42,000,385-43,200,402
+[ 7712.2s] reranker (gpu.reranker): scored 20,813 band pairs (1.7%) in 9s
+[ 7716.8s]   stage-2 chunk 37/44 rows 43,200,402-44,400,431
+[ 7793.6s] reranker (gpu.reranker): scored 20,676 band pairs (1.7%) in 10s
+[ 7798.2s]   stage-2 chunk 38/44 rows 44,400,431-45,600,444
+[ 7873.9s] reranker (gpu.reranker): scored 20,494 band pairs (1.7%) in 9s
+[ 7878.5s]   stage-2 chunk 39/44 rows 45,600,444-46,800,459
+[ 7954.3s] reranker (gpu.reranker): scored 20,573 band pairs (1.7%) in 9s
+[ 7958.9s]   stage-2 chunk 40/44 rows 46,800,459-48,000,488
+[ 8036.6s] reranker (gpu.reranker): scored 20,832 band pairs (1.7%) in 10s
+[ 8041.2s]   stage-2 chunk 41/44 rows 48,000,488-49,200,488
+[ 8117.4s] reranker (gpu.reranker): scored 20,589 band pairs (1.7%) in 10s
+[ 8122.0s]   stage-2 chunk 42/44 rows 49,200,488-50,400,494
+[ 8197.9s] reranker (gpu.reranker): scored 20,468 band pairs (1.7%) in 9s
+[ 8202.5s]   stage-2 chunk 43/44 rows 50,400,494-51,600,494
+[ 8237.0s] reranker (gpu.reranker): scored 6,493 band pairs (1.7%) in 3s
+[ 8238.6s]   stage-2 chunk 44/44 rows 51,600,494-51,974,499
+[ 8242.5s] final scores cached -> D:\amlc_data\interim\testp_f550ffb02552.npy
+[ 8242.6s] scored 51,974,499 pairs in 135.2 min
+[ 8496.9s] predicted singleton rate 0.0625  links/entity 3.17
+[ 8496.9s]   France: singleton 0.0541  links/entity 3.22
+[ 8496.9s]   India: singleton 0.0682  links/entity 3.08
+[ 8496.9s]   US: singleton 0.0588  links/entity 3.27
+[ 8496.9s]   matching_results: D:\amlc_data\output\matching_results.tsv
+[ 8496.9s]   candidate_pairs: D:\amlc_data\output\candidate_pairs.tsv
+[ 8496.9s]   rows: 1732544
+[ 8496.9s]   entities_with_matches: 1624311
+[ 8496.9s]   predicted_singletons: 108233
+[ 8496.9s]   predicted_singleton_rate: 0.06247056351815596
+[ 8496.9s]   mean_matches: 3.1747436140149974
+[ 8496.9s]   entities_with_matches_outside_candidates: 0

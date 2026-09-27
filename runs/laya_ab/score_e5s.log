@@ -1,0 +1,35 @@
+[    0.1s] loaded runs\ab_e5s\model.pkl: 5 stage-1 models, 5 stage-2, decision {'assign': 'hard', 'select': 'expected_f', 'thr': nan, 'miss': 0.0, 'f05': 0.9606988487876272}
+[    0.1s] band reranker: models/rr_e5s, band (0.2, 0.8)
+[  122.5s] loading cached candidates: cands_test_k30_df0.01_mdf3_ctry1_nall.parquet
+[  147.6s] test: 51,974,499 pairs over 1,732,494 entities; 50 of 1,732,544 got no candidates and will be written empty
+[  301.9s] test scoring in 26 entity-aligned chunks of ~2,000,000 pairs (L 1,732,494 records, source pool 9,969,589)
+[  881.1s]   stage-1 chunk 1/26 rows 0-2,000,010
+[ 1061.5s]   stage-1 chunk 2/26 rows 2,000,010-4,000,021
+[ 1229.3s]   stage-1 chunk 3/26 rows 4,000,021-6,000,044
+[ 1398.6s]   stage-1 chunk 4/26 rows 6,000,044-8,000,067
+[ 1564.8s]   stage-1 chunk 5/26 rows 8,000,067-10,000,073
+[ 1731.1s]   stage-1 chunk 6/26 rows 10,000,073-12,000,102
+[ 1897.8s]   stage-1 chunk 7/26 rows 12,000,102-14,000,124
+[ 2062.7s]   stage-1 chunk 8/26 rows 14,000,124-16,000,151
+[ 2228.9s]   stage-1 chunk 9/26 rows 16,000,151-18,000,171
+[ 2445.2s]   stage-1 chunk 10/26 rows 18,000,171-20,000,181
+[ 2617.1s]   stage-1 chunk 11/26 rows 20,000,181-22,000,191
+[ 2783.5s]   stage-1 chunk 12/26 rows 22,000,191-24,000,212
+[ 2950.5s]   stage-1 chunk 13/26 rows 24,000,212-26,000,220
+[ 3155.8s]   stage-1 chunk 14/26 rows 26,000,220-28,000,230
+[ 3358.3s]   stage-1 chunk 15/26 rows 28,000,230-30,000,249
+[ 3524.2s]   stage-1 chunk 16/26 rows 30,000,249-32,000,255
+[ 3690.5s]   stage-1 chunk 17/26 rows 32,000,255-34,000,282
+[ 3856.0s]   stage-1 chunk 18/26 rows 34,000,282-36,000,292
+[ 4022.8s]   stage-1 chunk 19/26 rows 36,000,292-38,000,301
+[ 4188.3s]   stage-1 chunk 20/26 rows 38,000,301-40,000,315
+[ 4354.0s]   stage-1 chunk 21/26 rows 40,000,315-42,000,325
+[ 4529.4s]   stage-1 chunk 22/26 rows 42,000,325-44,000,351
+[ 4694.8s]   stage-1 chunk 23/26 rows 44,000,351-46,000,359
+[ 4860.2s]   stage-1 chunk 24/26 rows 46,000,359-48,000,368
+[ 5025.1s]   stage-1 chunk 25/26 rows 48,000,368-50,000,384
+[ 5187.5s]   stage-1 chunk 26/26 rows 50,000,384-51,974,499
+[ 5313.7s] stage-2 claim features built globally: (51974499, 4)
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|##########| 201/201 [00:00<00:00, 3893.70it/s]
+[ 5454.3s] reranker (gpu.reranker): scored 30,901 band pairs (1.5%) in 54s
+[ 5464.0s]   stage-2 chunk 1/26 rows 0-2,000,010
