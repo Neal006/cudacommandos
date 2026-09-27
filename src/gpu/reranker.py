@@ -337,6 +337,7 @@ if __name__ == "__main__":
     t.add_argument("--epochs", type=int, default=1)
     t.add_argument("--bs", type=int, default=64)
     t.add_argument("--augment", type=float, default=0.0, help="fraction of augmented train rows to add")
+    t.add_argument("--lr", type=float, default=None, help="default 5e-5")
     t.add_argument("--run-dir", default=None)
     bn = sub.add_parser("bench")
     bn.add_argument("--model", default=BASE)
@@ -347,7 +348,7 @@ if __name__ == "__main__":
             d = load_pairs(a.pairs)
         else:
             d = make_training_pairs(pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"], a.entities)
-        train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, run_dir=a.run_dir, groups=d["s1_id"],
-              augment=a.augment)
+            train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, lr=a.lr, run_dir=a.run_dir,
+              groups=d["s1_id"], augment=a.augment)
     else:
         bench(a.model)
