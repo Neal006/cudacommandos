@@ -279,10 +279,13 @@ def measure(n: int):
     b_hit = hit(base)
     log(f"base: recall {b_hit / n_true:.4f}  ({base.height / n_ent:.1f} cands/entity)")
     rows = []
+    # AMLC_MEASURE_KEYS so the address-anchored keys can be measured without
+    # changing what a default run builds.
+    mkeys = tuple(os.environ.get("AMLC_MEASURE_KEYS", "cn,sk").split(","))
     variants = {f"sibs {key} top{t} cap{c}": sibs(base, k, key, t, c)
-                for key in ("cn", "sk") for t in (3, 5) for c in (50, 200, 1000)}
+                for key in mkeys for t in (3, 5) for c in (50, 200, 1000)}
     variants |= {f"dost {key} cap{c}": dost(s1k, k, key, c)
-                 for key in ("cn", "sk") for c in (10, 50, 200)}
+                 for key in mkeys for c in (10, 50, 200)}
     for name, fr in variants.items():
         fr = fr.join(base.select("s1_id", "cand_id"), on=["s1_id", "cand_id"], how="anti")
         rows.append((name, hit(fr), fr.height))
