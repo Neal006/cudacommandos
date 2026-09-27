@@ -1,0 +1,15 @@
+polars==1.44.2
+pyarrow==25.0.1
+pandas==3.0.6
+numpy==2.4.6
+scipy==1.17.1
+numba==0.67.0
+scikit-learn==1.9.1
+sparse_dot_topn==1.2.0
+rapidfuzz==3.14.6
+indic-transliteration==2.3.82
+lightgbm==4.7.0
+# --- GPU box only (cross-encoder), CUDA 12.x build of torch ---
+# torch>=2.3
+# transformers>=4.44
+# accelerate>=0.33
