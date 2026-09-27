@@ -32,10 +32,19 @@ MAX_LEN = 96
 
 
 def _torch():
+    """(torch, device, autocast dtype). On CPU, AMLC_CPU_BF16=1 turns on bf16
+    autocast: large on Sapphire Rapids (c7i/m7i, AMX tiles), a slowdown on CPUs
+    without bf16 units, so it is opt-in. AMLC_TORCH_THREADS pins intra-op threads."""
+    import os
+
     import torch
+    if os.environ.get("AMLC_TORCH_THREADS"):
+        torch.set_num_threads(int(os.environ["AMLC_TORCH_THREADS"]))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    amp = torch.bfloat16 if dev == "cuda" and torch.cuda.is_bf16_supported() else (
-        torch.float16 if dev == "cuda" else None)
+    if dev == "cuda":
+        amp = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    else:
+        amp = torch.bfloat16 if os.environ.get("AMLC_CPU_BF16") == "1" else None
     return torch, dev, amp
 
 
@@ -131,14 +140,16 @@ def warmup_linear(torch, opt, steps):
         opt, lambda s: min(1.0, (s + 1) / warm) * max(0.0, (steps - s) / max(1, steps - warm)))
 
 
-def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None, seed=7, groups=None):
-    """Fine-tune on (a, b, y). The validation split is by entity (`groups`) when given."""
+def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None, seed=7, groups=None,
+          base=BASE):
+    """Fine-tune `base` (any HF cross-encoder with a 1-logit head, e.g.
+    BAAI/bge-reranker-v2-m3) on (a, b, y). Validation split is by entity (`groups`)."""
     torch, dev, amp = _torch()
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     a, b, y = np.asarray(a, dtype=object), np.asarray(b, dtype=object), np.asarray(y, dtype=np.float32)
     tr_idx, va_idx = valid_split(len(y), valid_frac, rng, groups)
-    tok, model = _load(BASE, train=True)
+    tok, model = _load(base, train=True)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
     steps = epochs * math.ceil(len(tr_idx) / bs)
@@ -179,7 +190,8 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out)
     tok.save_pretrained(out)
-    meta = dict(kind="e5", base=BASE, max_len=MAX_LEN, pairs=int(len(tr_idx)), valid_logloss=vl, valid_auc=auc,
+    # kind "e5" names this BACKEND (gpu.reranker), not the backbone; `base` is the backbone
+    meta = dict(kind="e5", base=base, max_len=MAX_LEN, pairs=int(len(tr_idx)), valid_logloss=vl, valid_auc=auc,
                 seconds=time.time() - t0, device=dev)
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     if groups is not None:  # run_v2 --rerank refuses a model that saw any of its entities
@@ -242,12 +254,15 @@ if __name__ == "__main__":
     t.add_argument("--epochs", type=int, default=1)
     t.add_argument("--bs", type=int, default=64)
     t.add_argument("--run-dir", default=None)
+    t.add_argument("--base", default=BASE, help="backbone, e.g. BAAI/bge-reranker-v2-m3 (Apache-2.0, 0.57B)")
+    t.add_argument("--lr", type=float, default=5e-5)
     bn = sub.add_parser("bench")
     bn.add_argument("--model", default=BASE)
     a = ap.parse_args()
     if a.cmd == "train":
         ex = pd.read_csv(a.exclude, sep="\t", dtype=str)["s1_id"]
         d = make_training_pairs(ex, a.entities)
-        train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, run_dir=a.run_dir, groups=d["s1_id"])
+        train(d["a"], d["b"], d["y"], a.out, epochs=a.epochs, bs=a.bs, lr=a.lr, run_dir=a.run_dir,
+              groups=d["s1_id"], base=a.base)
     else:
         bench(a.model)
