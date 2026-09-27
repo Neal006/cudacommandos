@@ -135,4 +135,33 @@ assert sorted(got["cand_id"]) == ["a", "b"], got
 assert len(decide.select_expected_f_exact(det.iloc[:0], 0.0)) == 0, "empty frame"
 print(f"6 ok: exact decoder regret {r_exact:.5f} < plain {r_plain:.5f}; degenerate cases right")
 
+# ---- 7: hopeso passes pull the right siblings and respect country + pool caps
+import polars as pl  # noqa: E402
+import hopeso  # noqa: E402
+import stage2 as S2  # noqa: E402
+
+k = pl.DataFrame({
+    "entity_id": ["S2-1", "S2-2", "S3-3", "S2-4", "S2-5", "S2-6", "S2-7"],
+    "country":   ["India", "India", "India", "US", "India", "India", "India"],
+    "cn":        ["ram medicals", "ram medicals", "ram medicals", "ram medicals", "", "medical store", "medical store"],
+    "sk":        ["rmmdcls", "rmmdcls", "rmmdcls", "rmmdcls", "", "mdclstr", "mdclstr"],
+    "addr_empty": [False, True, False, False, True, False, False]})
+base = pl.DataFrame({"s1_id": ["S1-A", "S1-A"], "cand_id": ["S2-1", "S2-6"], "block_sim": [0.9, 0.2]})
+got = set(hopeso.sibs(base, k, "cn", top=1, cap=50).rows())
+assert got == {("S1-A", "S2-1"), ("S1-A", "S2-2"), ("S1-A", "S3-3")}, got   # no US copy, top-1 only
+assert hopeso.sibs(base, k, "cn", top=1, cap=2).height == 0, "pool of 3 must be capped out at 2"
+s1k = pl.DataFrame({"entity_id": ["S1-A"], "country": ["India"], "cn": ["ram medicals"],
+                    "sk": ["rmmdcls"], "addr_empty": [False]})
+assert set(hopeso.dost(s1k, k, "cn", cap=10)["cand_id"]) == {"S2-1", "S2-2", "S3-3"}
+new = hopeso.extras(base, s1k, k, dict(sib_top=1, sib_cap=50, dost_cap=10))
+assert set(new["cand_id"]) == {"S2-2", "S3-3"}, "extras must drop pairs the base already has"
+print("7 ok: sibs/dost stay in-country, respect caps, extras is base-disjoint")
+
+# ---- 8: gang features: count siblings, best OTHER sibling, ties, empty keys
+s1g = np.array(["A", "A", "A", "A", "B", "B"])
+kg = np.array(["x", "x", "y", "", "x", "x"], dtype=object)
+n_, mx_ = S2.gang(s1g, kg, np.array([.9, .2, .5, .7, .3, .3]), np.ones(6, bool))
+assert list(n_) == [2, 2, 1, 0, 2, 2] and list(mx_) == [.2, .9, -1, -1, .3, .3], (n_, mx_)
+print("8 ok: gang features exclude self, handle ties and empty keys")
+
 print("\nALL REVIEW-FIX TESTS PASSED")
