@@ -125,12 +125,38 @@ def preflight(need_torch=True):
     print("[preflight] torch + transformers OK", flush=True)
 
 
+def band_gate(rr):
+    """A big cross-encoder is only affordable here if the CPU keeps up.
+
+    With hopeso the frames are 84.2M train / 66.4M test pairs, and the 0.05-0.95
+    band is 2.4% of them -- about 3.6M pairs to score across the run. The A10G
+    benched bge-reranker-v2-m3 at 1,081 pairs/s (55 min for that volume). This
+    box has no GPU, so measure it here and refuse rather than find out four
+    hours in: under 500 pairs/s the scoring alone outlasts the deadline.
+    """
+    need = 3_600_000
+    floor = float(os.environ.get("AMLC_RR_FLOOR", "500"))
+    out = subprocess.run([sys.executable, "src/gpu/reranker.py", "bench", "--model", str(rr)],
+                         cwd=str(CODE), env={**os.environ}, capture_output=True, text=True)
+    print(out.stdout, out.stderr, flush=True)
+    out.check_returncode()
+    rate = float([l for l in out.stdout.splitlines() if "pairs/s" in l][0]
+                 .split("inference:")[1].split("pairs/s")[0].strip().replace(",", ""))
+    hours = need / rate / 3600
+    log(f"band gate: {rate:,.0f} pairs/s -> {need:,} band pairs in {hours:.1f} h")
+    if rate < floor:
+        sys.exit(f"[hopeso-box] {rate:.0f} pairs/s is under the {floor:.0f} floor "
+                 f"({hours:.1f} h of scoring). Aborting; the e5 and A submissions stand.")
+
+
 def main():
     preflight(RR != "none")
     setup()
     rr = rerank_dir()
     if rr:
         log(f"reranker: {rr}  band {BAND}")
+        if RR == "bge":
+            band_gate(rr)
 
     # ---- hopeso union frames. Both splits, before anything else needs them.
     # No --n: run_v4 loads the train frame with --frame (default None -> "nall"),
