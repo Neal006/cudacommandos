@@ -36,6 +36,7 @@ if __name__ == "__main__":
         "--entities", "40000",
         "--out", OUT_DIR,
         "--train-layers", "-1",
+        "--lr", "1e-5",
     ])
 
     print("[train_entry_gpu] done.", flush=True)

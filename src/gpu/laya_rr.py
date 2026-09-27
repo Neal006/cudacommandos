@@ -247,7 +247,7 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
     lr = lr or (LORA_LR if lora else FULL_LR)
     enc = PairEncoder(tok, cfg.get("head_max_len", 256))
     params = [p for p in model.parameters() if p.requires_grad]
-    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
+    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01, eps=1e-6)
     plan = [_epoch_batches(tr_idx, bs, rng, keys if listwise > 0 else None) for _ in range(epochs)]
     steps = sum(map(len, plan))
     sched = RR.warmup_linear(torch, opt, steps)
@@ -274,6 +274,10 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
         for ix in batches:
             batch = collate(enc.encode(a[ix], b[ix]), enc.markers, tok.pad_token_id)
             z_b, tgt = _logit_diff(model, batch, dev, amp), torch.from_numpy(y[ix]).to(dev)
+            if torch.isnan(z_b).any() or torch.isinf(z_b).any():
+                print(f"BAD LOGITS at step {step}: nan={torch.isnan(z_b).sum().item()} "
+                      f"inf={torch.isinf(z_b).sum().item()} of {len(z_b)}, "
+                      f"sample indices {ix[:5].tolist()}", flush=True)
             loss = lossf(z_b, tgt)
             if listwise > 0:
                 loss = loss + listwise * FT.listwise_loss(z_b, keys[ix], tgt)
