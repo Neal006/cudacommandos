@@ -83,6 +83,13 @@ assert (per_ent == 1).all(), "an entity landed in two folds"
 assert set(np.unique(f)) == set(range(5)), "not all folds used"
 print("4 ok: entity folds are group-pure")
 
+# ---- 4b: the holdout frame keeps block_sim (featurize needs it; v4 crashed without it)
+fp_ = pd.DataFrame({"s1_id": ["A", "A", "B"], "cand_id": ["x", "y", "z"], "block_sim": [.1, .2, .3]})
+hf = run_v4.hold_frame(fp_, np.array([False, True, True]))
+assert list(hf.columns) == ["s1_id", "cand_id", "block_sim"] and list(hf["block_sim"]) == [.2, .3]
+assert list(hf.index) == [0, 1], "index must be reset"
+print("4b ok: holdout frame keeps every column")
+
 # ---- 5: tune respects modes
 rng = np.random.default_rng(3)
 df = frame(40, 5, seed=3)

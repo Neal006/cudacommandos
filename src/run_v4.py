@@ -102,6 +102,12 @@ def entity_folds(s1_ids: pd.Series, k: int) -> np.ndarray:
     return (h % np.uint64(k)).astype(int)
 
 
+def hold_frame(full_pairs: pd.DataFrame, in_hold: np.ndarray) -> pd.DataFrame:
+    """Holdout rows with EVERY frame column: featurize reads block_sim (a model
+    feature), so slicing only the id columns crashes the holdout after 40 min."""
+    return full_pairs.loc[in_hold].reset_index(drop=True)
+
+
 def score_holdout(pairs, p1, claims, stats, models2, feat2, rerank, band):
     """Stage-2 fold-mean score for holdout pairs, built exactly as test is:
     fold-mean p1, claims sliced from the whole frame, reranker on the band."""
@@ -264,7 +270,7 @@ def main(a):
     summary["train_mean_n_claims"] = float(claims["n_claims"].mean())
     summary["train_mean_n_claims_naive"] = float(naive["n_claims"].mean())
     # The holdout keeps exactly what test will have: fold-mean p1, full claims.
-    hold_pairs = full_pairs.loc[in_hold, ["s1_id", "cand_id"]].reset_index(drop=True)
+    hold_pairs = hold_frame(full_pairs, in_hold)
     hold_p1 = p1_full[in_hold].astype(np.float64)
     hold_claims = claims_full[in_hold].reset_index(drop=True)
     del claims_full, p1_full, cand_codes_full, full_pairs, naive
