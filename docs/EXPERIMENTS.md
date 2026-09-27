@@ -412,3 +412,59 @@ fake for both models and must not reach the leaderboard; if it is real it is our
 and should go in immediately. Nothing else about the reranker is worth tuning until that is settled.
 Concretely: measure the S2/S3 record overlap between the reranker's training pairs and the 30k GBDT
 sample, then retrain with those records excluded and see whether the gain survives.
+
+---
+
+## 013 — address-anchored blocking keys: measured, DROPPED
+
+`src/hopeso.py` gained three keys anchored on the house number (`nn` first name
+token + number, `ns` number + longest street token, `nc` first name token +
+city), the shape a public 0.976-validation solution reports. Measured on 30,000
+train entities against the same base frame, full table in
+`docs/hopeso_key_measurement_30k.txt`.
+
+Efficiency is what decides this, not raw recall — every extra candidate is
+contention the matcher has to beat, and F0.5 weights precision 4x.
+
+| pass (top3 cap50) | misses recovered | new/entity | recovered per candidate |
+|---|---|---|---|
+| `cn` (existing) | 1,004 (19.2%) | 5.42 | **185** |
+| `sk` (existing) | 772 (14.8%) | 5.20 | **148** |
+| `nn` (new) | 685 (13.1%) | 6.07 | 113 |
+| `ns` (new) | 508 (9.7%) | 6.35 | 80 |
+| `nc` (new) | 235 (4.5%) | 7.76 | 30 |
+
+All three new keys are less efficient than the two we already have. `nn` is the
+best of them and still 40% behind `cn`; `nc` is nearly worthless.
+
+Widening the caps on the existing keys fails the same way:
+
+| union | recall | new/entity | F0.5 ceiling |
+|---|---|---|---|
+| top3 cap50 dost10 (default) | 0.9623 | 8.20 | 0.9922 |
+| top5 cap200 dost50 | 0.9678 | 62.59 | 0.9934 |
+| top5 cap1000 dost200 | 0.9711 | 152.26 | 0.9941 |
+
+**+0.0019 of ceiling for 18.6x the candidates.** The default VIBE is on the
+efficient frontier and nothing here beats it.
+
+Kept behind `AMLC_KEYS`, default `cn,sk`, so no run changes. Third negative
+result of the day, after the retriever union (012) and the early-stopping
+patience — all three killed by gates set before the measurement ran.
+
+### Related: two more things that did not work
+
+**Early-stopping patience.** `lgb.early_stopping(100)` watches binary_logloss
+while the objective is macro F0.5, and fold `best_iter` ranges from 436 to
+3,611 on identical data. Raising patience to 500 (`AMLC_ES_ROUNDS`) changed
+individual folds a lot -- fold 1 went 712 -> 1885 and gained +0.0034 valid --
+but the aggregate did not move: stage 1 **0.9532** against the patience-100
+box's **0.9533**. The fold variation averages out. Box killed.
+
+**bge-reranker-v2-m3 on CPU.** Fine-tuned fine on an A10G (bench 1,081
+pairs/s, valid AUC **0.99959** against e5-small's 0.99907, promoted). But the
+0.05-0.95 band is 3.6M pairs and the 192-vCPU AMX box benched **69 pairs/s** --
+14.5 hours. GPU quota caps at 48 vCPU, too few for the rest of the pipeline,
+and narrowing the band to what 69 pairs/s affords makes it narrower than the
+0.2-0.8 band e5 already covers. bge is the better reranker on hardware we do
+not have.
