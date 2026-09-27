@@ -90,7 +90,7 @@ SEED = 42
 # F_0.5 of 0.983 / 0.988 / 0.990 / 0.992. Going 30 -> 50 buys +0.002 of
 # ceiling and costs ~35M extra pairs to featurize on test. Not worth it:
 # blocking is not the bottleneck, matcher precision is.
-TOP_K = 30
+TOP_K = 60
 
 # Drop tokens appearing in more than this FRACTION of records. This is the
 # lever that keeps the sparse similarity product tractable at 10M records:

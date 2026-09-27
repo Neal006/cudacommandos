@@ -41,3 +41,5 @@ models/
 # they have to survive the blanket *.tsv rule above. Keep this negation last —
 # gitignore takes the last matching pattern.
 !tools/mlguard/fixtures/**/*.tsv
+models/
+model.tar.gz

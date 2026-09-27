@@ -231,6 +231,8 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
                     print(f"  skipped step {step}: grad norm {total_norm} "
                           f"({bad_batches} so far)", flush=True)
                 opt.zero_grad(set_to_none=True)
+                if scaler:
+                    scaler.update()
                 sched.step()
                 step += 1
                 continue

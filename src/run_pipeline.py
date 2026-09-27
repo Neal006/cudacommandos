@@ -48,14 +48,15 @@ def cached_candidates(s1, s2, s3, which, sample, frame_only=False):
     you actually want it.
     """
     key = (f"{which}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
-           f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{sample or 'all'}")
+       f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{sample or 'all'}_union1")
     path = C.INTERIM / f"cands_{key}.parquet"
 
     if path.exists():
         log(f"loading cached candidates: {path.name}")
         frame = pd.read_parquet(path)
     else:
-        cands = blocking.generate_candidates(s1, s2, s3)
+        from blocking_union import generate_candidates_union
+        cands = generate_candidates_union(s1, s2, s3, which)   
         frame = blocking.candidates_to_frame(cands)
         frame.to_parquet(path, index=False)
         log(f"cached candidates -> {path.name} ({len(frame):,} pairs)")
