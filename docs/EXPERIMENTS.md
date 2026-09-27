@@ -412,3 +412,41 @@ fake for both models and must not reach the leaderboard; if it is real it is our
 and should go in immediately. Nothing else about the reranker is worth tuning until that is settled.
 Concretely: measure the S2/S3 record overlap between the reranker's training pairs and the 30k GBDT
 sample, then retrain with those records excluded and see whether the gain survives.
+
+## 011 — v4: claim features over the full frame (the contention fix)
+
+Stage 2's competition features are raw counts over whatever Source-1 set is present, and we train
+with 150k entities while inferring with 1,732,544. Measured mean n_claims: train 150k **1.957**,
+test **5.549** — a 2.8x shift in the second most important feature in stage 2 (`n_strong_claims`,
+importance 2.52M behind only p1's 14.35M).
+
+`run_v4.py` computes those counts over the full 2,206,808-entity train frame (66,204,198 pairs)
+while still training the GBDT on 150k. Measured on the run: contention went to **6.717**, which
+brackets test's 5.549 instead of sitting far below it.
+
+```
+                        003 (150k+rr)    011 (+contention)
+stage 1                    0.9490            0.9494
+stage 2                    0.9626            0.9644
+India                      0.9491            0.9514
+US                         0.9717            0.9730
+```
+
+**+0.0018 OOF, +0.0023 on India.** That was not the predicted outcome. The fix aligns training with
+test contention, and OOF is *measured* in the low-contention regime, so the expectation was flat or
+slightly worse OOF with the benefit visible only on the leaderboard. Getting a gain anyway means the
+full-frame claim counts are genuinely more informative, not merely better matched to test — the
+sample-only counts were not just mis-scaled, they were noisy.
+
+**The decision layer changed its mind.** 003 chose `assign=soft, select=expected_f, miss=0.1`; 011
+chose a plain global `threshold` at 0.71. With honest claim features a single cut now beats
+per-entity expected-F, which suggests the expected-F machinery had been partly compensating for
+miscalibrated competition counts rather than adding decision-theoretic value of its own.
+
+Cost on the laptop: 4 h. Blocking all 2.2M train entities was 63 min, stage-1 inference over the
+full 66M-pair frame 83 min, the rest training.
+
+One logging defect to fix: the line `claims: full-frame mean n_claims 145.517 vs sample-only 10.797
+(test is 5.549)` compares a row-weighted mean (Sum n^2 / Sum n, dominated by popular candidates)
+against a plain ratio. Apples to oranges — the like-for-like figures are 6.717 vs 5.549. The
+features themselves are correct.
