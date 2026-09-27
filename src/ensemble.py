@@ -67,8 +67,17 @@ def _sigmoid(z):
 def main(a):
     specs = []
     for s in a.scores:
-        path, _, w = s.partition(":")
-        specs.append((Path(path), float(w) if w else 1.0))
+        # "path:weight", but a Windows path starts "D:\..." so splitting on the
+        # first colon eats the drive letter. Split from the right and only take
+        # the tail as a weight when it actually parses as a number.
+        head, sep, tail = s.rpartition(":")
+        if sep and head:
+            try:
+                specs.append((Path(head), float(tail)))
+                continue
+            except ValueError:
+                pass
+        specs.append((Path(s), 1.0))
 
     arrays, n = [], None
     for path, w in specs:
