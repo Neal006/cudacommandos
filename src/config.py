@@ -90,14 +90,14 @@ SEED = 42
 # F_0.5 of 0.983 / 0.988 / 0.990 / 0.992. Going 30 -> 50 buys +0.002 of
 # ceiling and costs ~35M extra pairs to featurize on test. Not worth it:
 # blocking is not the bottleneck, matcher precision is.
-TOP_K = 30
+TOP_K = int(os.environ.get("AMLC_TOP_K") or 30)          # env override: part of every cache key
 
 # Drop tokens appearing in more than this FRACTION of records. This is the
 # lever that keeps the sparse similarity product tractable at 10M records:
 # common tokens ("road", "pvt", "restaurant") produce huge posting lists and
 # almost no discriminative signal. Lower = faster and leaner, but prunes more
 # signal. Raise it if blocking recall is short and you have the RAM.
-BLOCK_MAX_DF = 0.01
+BLOCK_MAX_DF = float(os.environ.get("AMLC_MAX_DF") or 0.01)   # env override: part of every cache key
 
 # Source-1 rows per chunk of the sparse matmul. Peak memory scales with this
 # times the average number of records sharing a token. Drop it if you OOM.
@@ -127,7 +127,7 @@ BLOCK_DROP_TEXT = True
 # is far more than a pairwise matcher needs, and the full set will not fit in
 # the ~10GB of RAM available here. Blocking and inference still run over the
 # FULL test set — only matcher training is subsampled. None = use everything.
-TRAIN_SAMPLE = 150_000
+TRAIN_SAMPLE = int(os.environ.get("AMLC_TRAIN_SAMPLE") or 150_000)   # 0 = all 2.2M (run_* treat 0 as None)
 
 # Restrict candidate generation to records sharing the same country string.
 # Big reduction in comparisons and almost certainly correct — but it is an
