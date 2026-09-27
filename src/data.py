@@ -152,6 +152,8 @@ def write_outputs(test_s1_ids, matches: dict, candidates: dict):
     """Write both required output files and report a sanity summary."""
     m = write_submission(C.MATCHING_RESULTS, test_s1_ids, matches, C.GT_S1, C.GT_MATCH)
     c = write_submission(C.CANDIDATE_PAIRS, test_s1_ids, candidates, C.GT_S1, C.OUT_CAND)
+    if len(c) != len(m):
+        raise ValueError(f"candidate_pairs has {len(c)} rows, matching_results {len(m)}")
 
     # Final matches must be a subset of candidates — the official validator
     # warns otherwise, and it always means a pipeline bug.
@@ -170,3 +172,42 @@ def write_outputs(test_s1_ids, matches: dict, candidates: dict):
         "mean_matches": float(n_match.mean()),
         "entities_with_matches_outside_candidates": leaked,
     }
+
+
+def frame_fingerprint(pairs: pd.DataFrame) -> str:
+    """Order-sensitive hash of a candidate frame's (s1_id, cand_id) rows.
+
+    A cached score array means "score of row i". Two arrays of the same length
+    over differently ordered frames are silently misaligned, and a length check
+    cannot see that, so score caches carry this beside them.
+    """
+    import hashlib
+    h = pd.util.hash_pandas_object(pairs[["s1_id", "cand_id"]], index=False)
+    return hashlib.sha1(h.to_numpy().tobytes()).hexdigest()[:16]
+
+
+def write_score_meta(npy_path, pairs: pd.DataFrame, **info) -> None:
+    """Sidecar `<scores>.json`: row count + frame fingerprint (+ provenance)."""
+    import json
+    meta = {"rows": int(len(pairs)), "frame": frame_fingerprint(pairs), **info}
+    Path(npy_path).with_suffix(".json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+
+
+def check_score_meta(npy_path, pairs: pd.DataFrame) -> None:
+    """Refuse a score array cached over a different frame.
+
+    A missing sidecar only warns: caches written before sidecars existed
+    (e.g. submission 003's testp_f550ffb02552.npy) stay usable.
+    """
+    import json
+    side = Path(npy_path).with_suffix(".json")
+    if not side.exists():
+        print(f"WARNING: {side.name} missing -- cannot prove {Path(npy_path).name} "
+              "is aligned with this candidate frame (length check only)", flush=True)
+        return
+    meta = json.loads(side.read_text(encoding="utf-8"))
+    got = frame_fingerprint(pairs)
+    if meta.get("rows") != len(pairs) or meta.get("frame") != got:
+        raise SystemExit(f"{Path(npy_path).name} was scored over a different candidate frame "
+                         f"(rows {meta.get('rows')} vs {len(pairs)}, "
+                         f"frame {meta.get('frame')} vs {got})")

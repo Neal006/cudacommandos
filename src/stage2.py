@@ -101,4 +101,38 @@ def build(pairs: pd.DataFrame, p1: np.ndarray, R: pd.DataFrame,
         ok = (t >= 0) & (t != ri)          # comparing a record with itself says nothing
         sim[ok] = _quick_sim(R, ri[ok], t[ok].astype(np.int64))
         f[name] = sim
+    for col, pre in (("_core_name", "gang"), ("_skel", "gang_sk")):
+        n, mx = gang(d["s1_id"].to_numpy(), R[col].to_numpy()[np.maximum(ri, 0)],
+                     d["p1"].to_numpy(), ri >= 0)
+        f[f"{pre}_n"], f[f"{pre}_max"] = n, mx
     return f
+
+
+def gang(s1, key, p1, valid):
+    """Sibling votes inside one entity's candidate list.
+
+    Sources hold 5-6 copies of one business. If this record's exact-name (or
+    skeleton) siblings are ALSO candidates of this entity and one of them is
+    scored high, this record is probably the same business. Per row:
+      n    how many of the entity's candidates share this record's key (incl. itself)
+      mx   best stage-1 score among those siblings, EXCLUDING itself (-1 if none)
+    Groups by (s1_id, key), so it is safe inside entity-aligned chunks.
+    """
+    ks = pd.Series(key, dtype="object")
+    ok = valid & ks.notna().to_numpy() & (ks.fillna("").astype(str).str.len() > 0).to_numpy()
+    n = np.zeros(len(p1))
+    mx = np.full(len(p1), -1.0)
+    if not ok.any():
+        return n, mx
+    h = pd.DataFrame({"s": s1[ok], "k": key[ok], "p": np.asarray(p1, dtype=np.float64)[ok]})
+    gp = h.groupby(["s", "k"], sort=False)["p"]
+    cnt = gp.transform("size").to_numpy()
+    top1 = gp.transform("max").to_numpy()
+    # the row holding the group max (first one on ties) sees the SECOND best;
+    # every other row sees the max. That is "best sibling other than me".
+    rank = gp.rank(method="first", ascending=False).to_numpy()
+    top2 = h["p"].where(rank != 1).groupby([h["s"], h["k"]], sort=False).transform("max").to_numpy()
+    sib = np.where(rank == 1, top2, top1)
+    n[ok] = cnt
+    mx[ok] = np.where(cnt > 1, np.nan_to_num(sib, nan=-1.0), -1.0)
+    return n, mx
