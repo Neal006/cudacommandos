@@ -28,13 +28,21 @@ ROLE = os.environ.get("AMLC_SM_ROLE",
 S3 = f"s3://{BUCKET}/{PREFIX}"
 
 # hourly on-demand, ap-south-1, from the pricing API on 2026-09-27
+# Container 2.5.1/py311 matches the local known-good stack (torch 2.5.1,
+# transformers 5.17, numpy 2.1). On the 2.3 container, pip resolves
+# transformers>=4.40 to 5.x, whose torch-availability check rejects torch 2.3
+# and then reports "AutoModelForSequenceClassification requires the PyTorch
+# library but it was not found" -- on a PyTorch image. That cost a 2-hour
+# r5.24xlarge run and the first GPU box.
 PRICE = {"ml.m7i.48xlarge": 12.217, "ml.c7i.48xlarge": 10.282, "ml.g5.2xlarge": 1.819}
 
 BOXES = {
     # name: (instance, entry, env, extra inputs, est hours)
     "a":   ("ml.m7i.48xlarge", "sm_proc_hopeso.py",
             {"AMLC_RR": "none", "AMLC_RUN_ID": "013_hopeso_a"}, [], 2.5),
-    "e5":  ("ml.m7i.48xlarge", "sm_proc_hopeso.py",
+    # c7i rather than a second m7i: same 192 vCPU for $2/h less, 384 GB is
+    # plenty at chunk 8M, and it leaves both m7i slots free for the bge box.
+    "e5":  ("ml.c7i.48xlarge", "sm_proc_hopeso.py",
             {"AMLC_RR": "e5", "AMLC_RUN_ID": "014_hopeso_e5", "AMLC_BAND": "0.2 0.8"},
             [("rerank", f"{S3}/rr_e5s/")], 3.0),
     "bge": ("ml.c7i.48xlarge", "sm_proc_hopeso.py",
@@ -52,7 +60,7 @@ def launch_training(a, inst, entry, env, hours, sess):
     est = PyTorch(
         entry_point=entry, source_dir=".", role=ROLE,
         instance_type=inst, instance_count=1,
-        framework_version="2.3", py_version="py311",
+        framework_version="2.5.1", py_version="py311",
         volume_size=a.volume, max_run=int(a.max_hours * 3600),
         base_job_name="amlc-" + a.box, sagemaker_session=sess,
         environment={**env, "AMLC_MEMBER": "priyanshu"},
@@ -116,7 +124,7 @@ def main(a):
         return launch_training(a, inst, entry, env, hours, sess)
 
     proc = PyTorchProcessor(
-        framework_version="2.3", py_version="py311", role=ROLE,
+        framework_version="2.5.1", py_version="py311", role=ROLE,
         instance_type=inst, instance_count=1,
         volume_size_in_gb=a.volume, max_runtime_in_seconds=int(a.max_hours * 3600),
         base_job_name=job, env={**env, "AMLC_MEMBER": "priyanshu"},

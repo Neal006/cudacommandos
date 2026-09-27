@@ -96,7 +96,37 @@ def rerank_dir():
     return inner[0]
 
 
+
+def preflight(need_torch=True):
+    """Fail in the first minute, not the third hour.
+
+    Both of the first cloud failures were the same thing: transformers could be
+    imported fine, so nothing complained until the code actually asked for a
+    torch-backed class -- which on the reranker path is after blocking, stage 1
+    and most of stage 2. Check it up front instead.
+    """
+    import importlib.metadata as md
+    for pkg in ("torch", "transformers", "numpy", "pandas", "lightgbm"):
+        try:
+            print(f"[preflight] {pkg} {md.version(pkg)}", flush=True)
+        except Exception:
+            print(f"[preflight] {pkg} MISSING", flush=True)
+    if not need_torch:
+        return
+    import torch  # noqa: F401
+    from transformers.utils import is_torch_available
+    if not is_torch_available():
+        raise SystemExit(
+            "[preflight] transformers cannot see torch -- this is the 2.3-container "
+            "failure: transformers 5.x rejects torch 2.3. Use framework_version 2.5.1 "
+            "or pin transformers<5.")
+    from transformers import AutoModelForSequenceClassification as _A
+    _ = _A  # touching the lazy class is what actually raised before
+    print("[preflight] torch + transformers OK", flush=True)
+
+
 def main():
+    preflight(RR != "none")
     setup()
     rr = rerank_dir()
     if rr:
