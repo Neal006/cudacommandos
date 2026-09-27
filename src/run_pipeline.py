@@ -56,10 +56,13 @@ def cached_candidates(s1, s2, s3, which, sample, frame_only=False):
         frame = pd.read_parquet(path)
     else:
         from blocking_union import generate_candidates_union
-        cands = generate_candidates_union(s1, s2, s3, which)   
+        cands, skel_source_ids = generate_candidates_union(s1, s2, s3, which)
         frame = blocking.candidates_to_frame(cands)
+        frame["is_skel_source"] = frame["cand_id"].isin(skel_source_ids).astype(int)
+        assert "is_skel_source" in frame.columns
         frame.to_parquet(path, index=False)
-        log(f"cached candidates -> {path.name} ({len(frame):,} pairs)")
+        log(f"cached candidates -> {path.name} ({len(frame):,} pairs, "
+            f"{frame['is_skel_source'].sum():,} skel-only)")
         return (None if frame_only else cands), frame
 
     if frame_only:

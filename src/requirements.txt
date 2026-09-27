@@ -1,24 +1,9 @@
-# pandas>=2.2,<3.0
-# numpy>=1.26,<2.2
-# scipy>=1.11
-# scikit-learn>=1.4,<1.9
-# lightgbm>=4.3
-# rapidfuzz>=3.9
-# pyarrow>=15.0
-# polars>=1.0
-
-# GPU stage 2 requirements — laya reranker fine-tuning only
 pandas>=2.2,<3.0
 numpy>=1.26,<2.2
-pyarrow>=15.0          # ft_data.py reads/writes parquet
-
-torch>=2.2
-transformers>=4.40,<5.0
-accelerate>=0.30
-sentencepiece
-protobuf
-huggingface_hub        # laya_rr.py fetch() -> snapshot_download
-laya==0.3.20
-peft                    # laya's LoRA support (not used at --train-layers -1, but cheap to include)
-
+scipy>=1.11
+scikit-learn>=1.4,<1.9
+lightgbm>=4.3
+rapidfuzz>=3.9
+pyarrow>=15.0
+polars>=1.0
 tqdm
