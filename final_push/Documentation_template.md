@@ -1,6 +1,6 @@
 # ML Challenge 2026: Business Entity Resolution Solution
 
-**Team Name:** CUDA_COMMONDOS
+**Team Name:** CUDA_COMMANDOS
 **Team Members:** Priyanshu Doshi, Neal Daftary, Krisha, Krina
 **Submission Date:** 2026-09-27
 
