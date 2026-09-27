@@ -35,6 +35,46 @@ won.
 
 ## Why it was crashing
 
+### The corrected version (your NaN logging settled it)
+
+Your `BAD LOGITS` output was the decisive evidence, and it corrected our
+first theory. It showed:
+
+```
+step 1:  2 of 32 non-finite     <- on the PRETRAINED model, before any update
+step 2+: 32 of 32, forever
+```
+
+So it was never training drift. **Two specific input pairs produce non-finite
+logits on the very first forward pass**, and the run was already dead at step
+2 — validation at step 200 was simply the first time anything printed.
+
+The mechanism that turns "2 bad" into "everything bad" is gradient clipping:
+
+```python
+torch.nn.utils.clip_grad_norm_(params, 1.0)
+```
+
+That computes **one norm across every parameter**. If a single row contributes
+a nan gradient, the total norm is nan, the clip scale is nan, and every other
+gradient gets multiplied by it. Clipping doesn't protect against one bad row —
+it is what broadcasts the corruption to the whole model in a single step.
+
+That is now guarded: the norm is checked and the step is **skipped** when it is
+not finite.
+
+### But it is still fp16, not just bad data
+
+Worth knowing, because it decides the real fix: **we ran this exact data
+through laya on the laptop for 132 minutes with zero NaN.** Same
+`make_training_pairs`, same records, same code — on bf16.
+
+So those two rows are not universally broken. They are degenerate enough to
+overflow **fp16**, and bf16's wider exponent absorbs them. Which means
+`AMLC_AMP=fp32` is a genuine root-cause fix here, not a workaround.
+
+
+
 **The T4 has no bfloat16.** That's the whole thing.
 
 ```python
@@ -88,7 +128,9 @@ that overflows, and you're on fp16 because the T4 can't do bf16.
 | Fix | File | What it does |
 |---|---|---|
 | Clamp logits to ±30 | `gpu/reranker.py`, `gpu/laya_rr.py` | `nan_to_num` then clamp, in fp32. sigmoid(30) = 1 − 1e-13, so it changes nothing real but stops one row poisoning a batch |
-| **Skip** non-finite batches | both | if the loss is still non-finite, don't step. One bad backward writes nan into every weight and nothing recovers. Counted and reported |
+| **Skip on bad grad norm** | both | the load-bearing fix. `clip_grad_norm_` returns one norm over all parameters; if it is nan the step is skipped rather than taken. Checking the loss alone is **not** enough, because clamping makes the loss finite while the backward can still be nan |
+| Skip non-finite losses | both | second line of defence, same idea earlier in the step |
+| Non-finite row diagnostics | `gpu/reranker.py` | `AMLC_RR_DIAG=1` prints the offending record text |
 | Gradient clipping | `gpu/reranker.py` | `clip_grad_norm_(1.0)`, which laya already had and e5 didn't |
 | Validation batch ≤ training | both | was hardcoded 128/256 regardless of `--bs` — also the biggest VRAM spike |
 | `AMLC_AMP` override | `gpu/reranker.py` | `bf16 / fp16 / fp32 / auto`. fp32 cannot overflow |
@@ -136,6 +178,28 @@ reranker: ... train / ... valid pairs, N steps, device cuda, amp torch.float16
 
 The `valid` number appearing at step 200 is the thing that used to crash.
 
+### Finding the bad records
+
+If you want the actual text of any row that goes non-finite:
+
+```bash
+AMLC_RR_DIAG=1 ...
+```
+
+which prints, for up to 3 rows per occurrence:
+
+```
+  NON-FINITE LOGITS step 1: 2 of 32
+    idx=12345 len_a=181 len_b=204
+      a='name: ... addr: ...'
+      b='name: ... addr: ...'
+```
+
+Useful for confirming what is degenerate about them (empty text, extreme
+length, unusual unicode). Not required — the guards make training survive
+regardless — but it would settle whether it is length-driven, which is what
+the fp16 theory predicts.
+
 ### If it still misbehaves
 
 ```bash
@@ -157,6 +221,7 @@ means fp16 isn't viable for that configuration and fp32 is the answer.
 | `AMLC_EPOCHS` | 2 | our current model used 1 |
 | `AMLC_AUGMENT` | 0.3 | token drops/swaps/translit noise on **train rows only** |
 | `AMLC_AMP` | auto | `fp32` is the escape hatch |
+| `AMLC_RR_DIAG` | unset | `1` prints the text of non-finite rows |
 
 ---
 

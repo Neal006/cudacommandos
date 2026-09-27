@@ -16,6 +16,7 @@ about, and hand that score to stage 2 as a feature (src/run_v2.py --rerank).
 """
 import argparse
 import json
+import os
 import math
 import sys
 import time
@@ -185,7 +186,16 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
             # fine on Ampere can come back inf here. .float() preserves the inf,
             # so clamp before the loss: sigmoid(30) is 1 - 1e-13, which makes
             # this free in every case that is not already broken.
-            z = torch.nan_to_num(z, nan=0.0, posinf=LOGIT_CLAMP, neginf=-LOGIT_CLAMP)                      .clamp_(-LOGIT_CLAMP, LOGIT_CLAMP)
+            if _DIAG and not torch.isfinite(z).all():
+                nb = (~torch.isfinite(z)).nonzero(as_tuple=True)[0].tolist()
+                print(f"  NON-FINITE LOGITS step {step}: {len(nb)} of {len(z)}", flush=True)
+                for bi in nb[:3]:
+                    j = ix[bi]
+                    print(f"    idx={j} len_a={len(str(a[j]))} len_b={len(str(b[j]))}", flush=True)
+                    print(f"      a={str(a[j])[:200]!r}", flush=True)
+                    print(f"      b={str(b[j])[:200]!r}", flush=True)
+            z = torch.nan_to_num(z, nan=0.0, posinf=LOGIT_CLAMP, neginf=-LOGIT_CLAMP)
+            z = z.clamp_(-LOGIT_CLAMP, LOGIT_CLAMP)
             loss = lossf(z, tgt)
             if not torch.isfinite(loss):
                 # Never step on a non-finite loss: one such backward writes nan
@@ -201,12 +211,33 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
             if scaler:
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
-                torch.nn.utils.clip_grad_norm_(params, 1.0)
+            else:
+                loss.backward()
+            # clip_grad_norm_ returns ONE norm combined across every parameter.
+            # If a single row produced a nan gradient, that norm is nan, the
+            # clip scale is nan, and multiplying every other gradient by it
+            # corrupts the whole model in one step -- which is how "2 of 32 bad
+            # at step 1" becomes "32 of 32 bad forever" at step 2. Clipping
+            # does not protect against this; it is what spreads it.
+            #
+            # Checking the LOSS is not enough: the logits are clamped above, so
+            # the loss is finite while the backward pass can still be nan from
+            # the poisoned saved activations. The norm is the first place the
+            # corruption is visible, so the skip has to happen here.
+            total_norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
+            if not torch.isfinite(total_norm):
+                bad_batches += 1
+                if bad_batches <= 5 or bad_batches % 100 == 0:
+                    print(f"  skipped step {step}: grad norm {total_norm} "
+                          f"({bad_batches} so far)", flush=True)
+                opt.zero_grad(set_to_none=True)
+                sched.step()
+                step += 1
+                continue
+            if scaler:
                 scaler.step(opt)
                 scaler.update()
             else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(params, 1.0)
                 opt.step()
             sched.step()
             run_loss.append(loss.item())
@@ -250,6 +281,9 @@ def _eval(tok, model, a, b, y, idx, bs=256):
 # Log-odds beyond this are meaningless (sigmoid(30) = 1 - 1e-13) and are the
 # signature of fp16 overflow rather than confidence.
 LOGIT_CLAMP = 30.0
+
+# AMLC_RR_DIAG=1 prints the text of any row whose logits go non-finite.
+_DIAG = os.environ.get("AMLC_RR_DIAG") == "1"
 
 
 def _score(tok, model, a, b, bs=256):
