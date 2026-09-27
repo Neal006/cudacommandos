@@ -32,10 +32,31 @@ MAX_LEN = 96
 
 
 def _torch():
+    """(torch, device, autocast dtype).
+
+    The dtype is the thing that differs between our boxes and it matters more
+    than it looks. bf16 carries fp32's exponent range, so activations simply
+    cannot overflow it; fp16 tops out at 65504. An RTX 3050 is sm_86 and gets
+    bf16. A T4 (ml.g4dn.xlarge) is sm_75 -- Turing, no bf16 -- so it silently
+    falls back to fp16, and a model whose activations are fine on one box
+    produces inf on the other.
+
+    AMLC_AMP overrides the choice: bf16 | fp16 | fp32 | auto (default).
+    fp32 is the safe harbour -- slower, more memory, but no overflow.
+    """
+    import os
     import torch
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    amp = torch.bfloat16 if dev == "cuda" and torch.cuda.is_bf16_supported() else (
-        torch.float16 if dev == "cuda" else None)
+    want = os.environ.get("AMLC_AMP", "auto").lower()
+    if dev != "cuda" or want == "fp32":
+        return torch, dev, None
+    if want == "bf16":
+        return torch, dev, torch.bfloat16
+    if want == "fp16":
+        return torch, dev, torch.float16
+    if want not in ("auto", ""):
+        raise ValueError(f"AMLC_AMP={want!r}; expected bf16|fp16|fp32|auto")
+    amp = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     return torch, dev, amp
 
 
@@ -135,7 +156,16 @@ def train(a, b, y, out, epochs=1, bs=64, lr=5e-5, valid_frac=0.02, run_dir=None,
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
     steps = epochs * math.ceil(len(tr_idx) / bs)
     sched = warmup_linear(torch, opt, steps)
-    scaler = torch.amp.GradScaler("cuda") if amp == torch.float16 else None
+    # torch.amp.GradScaler(device) landed in 2.4; torch.cuda.amp.GradScaler is
+    # the older spelling and is deprecated in newer versions. requirements-gpu
+    # allows torch>=2.2, and SageMaker images pin their own, so support both.
+    if amp == torch.float16:
+        try:
+            scaler = torch.amp.GradScaler("cuda")
+        except (AttributeError, TypeError):
+            scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
     lossf = torch.nn.BCEWithLogitsLoss()
     log = None
     if run_dir:

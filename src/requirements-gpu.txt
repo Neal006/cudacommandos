@@ -4,7 +4,9 @@ numpy>=1.26,<2.2
 pyarrow>=15.0          # ft_data.py reads/writes parquet
 
 torch>=2.2
-transformers>=4.40,<5.0
+transformers>=4.48         # laya 0.3.20 itself requires >=4.48.0; the old
+                           # >=4.40 pin could resolve to a version laya
+                           # refuses to import
 accelerate>=0.30
 sentencepiece
 protobuf

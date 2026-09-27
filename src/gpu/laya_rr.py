@@ -153,12 +153,28 @@ def _freeze(model, train_layers):
         layer.requires_grad_(False)
 
 
+# fp16 tops out at 65504. bf16 has fp32's exponent range and cannot overflow
+# here, so on an Ampere box this clamp never fires; on a Turing box (T4, no
+# bf16) it is the difference between training and a NaN. The bound is far
+# outside any useful log-odds -- sigmoid(30) is 1 - 1e-13 -- so clamping costs
+# nothing real and stops one overflowing row poisoning the whole batch through
+# the loss.
+LOGIT_CLAMP = 30.0
+
+
 def _logit_diff(model, batch, dev, amp):
-    """logit(true) - logit(false) per row: the pre-temperature noul log-odds."""
+    """logit(true) - logit(false) per row: the pre-temperature noul log-odds.
+
+    Returned in fp32 and guaranteed finite. Non-finite values are replaced
+    rather than propagated: a single inf would make the batch loss nan, the
+    gradients nan, and every weight nan from that step onward -- which is what
+    turns one bad row into a dead run.
+    """
     import torch
     with torch.autocast(device_type=dev, dtype=amp, enabled=amp is not None):
         logits, _ = model(**{k: v.to(dev, non_blocking=True) for k, v in batch.items()})
-    return (logits[:, 1] - logits[:, 0]).float()
+    z = (logits[:, 1] - logits[:, 0]).float()
+    return torch.nan_to_num(z, nan=0.0, posinf=LOGIT_CLAMP, neginf=-LOGIT_CLAMP)                 .clamp_(-LOGIT_CLAMP, LOGIT_CLAMP)
 
 
 def _diffs(tok, model, enc, a, b, bs=128):
@@ -259,7 +275,16 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
         tuned = f"LoRA r={lora} on all layers"
     else:
         tuned = f"top {train_layers} layers" if train_layers >= 0 else "all layers"
-    scaler = torch.amp.GradScaler("cuda") if amp == torch.float16 else None
+    # torch.amp.GradScaler(device) landed in 2.4; torch.cuda.amp.GradScaler is
+    # the older spelling and is deprecated in newer versions. requirements-gpu
+    # allows torch>=2.2, and SageMaker images pin their own, so support both.
+    if amp == torch.float16:
+        try:
+            scaler = torch.amp.GradScaler("cuda")
+        except (AttributeError, TypeError):
+            scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
     lossf = torch.nn.BCEWithLogitsLoss()
     log = None
     if run_dir:
@@ -268,19 +293,26 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
     print(f"laya reranker: {len(tr_idx):,} train / {len(va_idx):,} valid pairs, {steps} steps, device {dev}, "
           f"amp {amp}, trainable {sum(p.numel() for p in params)/1e6:.1f}M params "
           f"({tuned} + head), lr {lr:g}, augment {augment:g}, listwise {listwise:g}", flush=True)
-    step, t0, run_loss = 0, time.time(), []
+    step, t0, run_loss, bad_batches = 0, time.time(), [], 0
     for batches in plan:
         model.train()
         for ix in batches:
             batch = collate(enc.encode(a[ix], b[ix]), enc.markers, tok.pad_token_id)
             z_b, tgt = _logit_diff(model, batch, dev, amp), torch.from_numpy(y[ix]).to(dev)
-            if torch.isnan(z_b).any() or torch.isinf(z_b).any():
-                print(f"BAD LOGITS at step {step}: nan={torch.isnan(z_b).sum().item()} "
-                      f"inf={torch.isinf(z_b).sum().item()} of {len(z_b)}, "
-                      f"sample indices {ix[:5].tolist()}", flush=True)
             loss = lossf(z_b, tgt)
             if listwise > 0:
                 loss = loss + listwise * FT.listwise_loss(z_b, keys[ix], tgt)
+            if not torch.isfinite(loss):
+                # Do NOT step: one non-finite backward writes nan into every
+                # trainable weight and nothing recovers. Skip and carry on.
+                bad_batches += 1
+                if bad_batches <= 5 or bad_batches % 100 == 0:
+                    print(f"  skipped non-finite loss at step {step} "
+                          f"(batch {len(ix)} rows, {bad_batches} so far)", flush=True)
+                opt.zero_grad(set_to_none=True)
+                sched.step()
+                step += 1
+                continue
             opt.zero_grad(set_to_none=True)
             if scaler:
                 scaler.scale(loss).backward()
@@ -297,7 +329,11 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
             step += 1
             if step % 200 == 0 or step == steps:
                 sub = va_idx[:4000]
-                vl, _ = _metrics(_diffs(tok, model, enc, a[sub], b[sub]), y[sub], 1.0)
+                # _diffs length-buckets, so its last batches hold the LONGEST
+                # sequences -- the ones most likely to overflow fp16 or spike
+                # VRAM. Never validate with a batch wider than training used.
+                vl, _ = _metrics(_diffs(tok, model, enc, a[sub], b[sub], bs=min(bs, 64)),
+                                 y[sub], 1.0)
                 tl = float(np.mean(run_loss[-200:]))
                 print(f"  step {step}/{steps}  train {tl:.4f}  valid {vl:.4f}  "
                       f"{step*bs/(time.time()-t0):,.0f} pairs/s", flush=True)
@@ -306,7 +342,7 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
                 model.train()
     if lora:
         FT.merge_lora(model)                      # validate and save exactly what will be served
-    z = _diffs(tok, model, enc, a[va_idx], b[va_idx])
+    z = _diffs(tok, model, enc, a[va_idx], b[va_idx], bs=min(bs, 64))
     t = fit_temperature(z, y[va_idx]) if len(va_idx) else 1.0
     vl, auc = _metrics(z, y[va_idx], t)
     out = Path(out)
@@ -322,6 +358,10 @@ def train(a, b, y, out, base=BASE_DIR, epochs=1, bs=32, lr=None, valid_frac=0.02
         (out / "entities.txt").write_text("\n".join(sorted(set(map(str, groups)))), encoding="utf-8")
     if log:
         log.end()
+    if bad_batches:
+        print(f"laya reranker: WARNING {bad_batches} of {steps} batches were skipped for a "
+              f"non-finite loss. On a GPU without bf16 (T4/Turing) try AMLC_AMP=fp32, or "
+              f"lower --bs / --train-layers.", flush=True)
     print(f"laya reranker saved -> {out}  T {t:.3f}  valid logloss {vl:.4f}  AUC {auc:.4f}", flush=True)
     return meta
 
