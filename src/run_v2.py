@@ -1,10 +1,10 @@
 """v2 pipeline: lean ingest -> cached blocking -> vectorized features -> stage 1 ->
-stage 2 -> decision layer -> outputs. Every stage is logged for tools/mlguard.
+stage 2 -> decision layer -> outputs. Every stage is logged to runs/<id>/.
 
     python src/run_v2.py --sample 150000                 # full run: train OOF + test outputs
     python src/run_v2.py --sample 30000 --train-only     # OOF only (no test blocking)
     python src/run_v2.py --sample 30000 --train-only --ablate   # + old-features baseline
-    tools/mlguard/train_guarded.sh 004_v2 --sample 150000     # PIPELINE=src/run_v2.py
+    python src/run_v2.py --sample 150000 --run-id 004_v2
 
 Shares the candidate cache with run_pipeline.py (same key, same blobs), so a test
 cache Priyanshu already paid 4-5 h for is reused as-is.
@@ -36,7 +36,25 @@ T0 = time.time()
 PARAMS = dict(objective="binary", metric="binary_logloss", learning_rate=0.05,
               num_leaves=63, min_data_in_leaf=50, feature_fraction=0.8,
               bagging_fraction=0.8, bagging_freq=1, verbosity=-1, seed=C.SEED, num_threads=0)
+# These were hand-set and never tuned. AMLC_LGB overrides them as
+# "key=value,key=value" so a run can carry a different set without a code
+# change -- useful less for tuning than for ensemble diversity: a model that
+# differs in depth and learning rate is decorrelated from the default in a way
+# a reseeded copy of the same configuration is not.
+if os.environ.get("AMLC_LGB"):
+    for _kv in os.environ["AMLC_LGB"].split(","):
+        _k, _, _v = _kv.partition("=")
+        _k, _v = _k.strip(), _v.strip()
+        PARAMS[_k] = int(_v) if _v.lstrip("-").isdigit() else float(_v)
 MAX_ROUNDS = 2000
+# Early stopping watches binary_logloss, but the objective is macro F0.5 per
+# entity. Logloss flattens long before F0.5 does, so with 100 rounds of patience
+# whether a fold ends near 500 trees or near 3,400 is largely noise -- and the
+# long ones score better. Measured on identical data, same seed, same 46
+# features: a fold that stopped at 473 scored valid 0.9474, one that ran to 3381
+# scored 0.9524. Across runs, 0/5 long folds gave stage 1 0.9494 and 3/5 gave
+# 0.9517. Default stays 100 so existing runs reproduce; raise with AMLC_ES_ROUNDS.
+ES_ROUNDS = int(os.environ.get("AMLC_ES_ROUNDS") or 100)
 
 
 def log(msg):
@@ -207,8 +225,10 @@ def entity_f05(pairs, y, p, thr, truth_count):
     return decide.macro_f05(sel[sel["p"] >= thr], truth_count)
 
 
-def fit_cv(X, y, pairs, folds, truth_count, run, stage):
-    """GroupKFold LightGBM. Returns OOF scores, fold models, mlguard fold rows."""
+def fit_cv(X, y, pairs, folds, truth_count, run, stage, rounds=None):
+    """GroupKFold LightGBM. Returns OOF scores, fold models, per-fold summary rows.
+    `rounds` caps boosting (default MAX_ROUNDS); passed, not patched into this module."""
+    rounds = rounds or MAX_ROUNDS
     oof = np.zeros(len(X))
     models, rows = [], []
     rng = np.random.default_rng(C.SEED)
@@ -216,17 +236,17 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage):
         tr, va = folds != k, folds == k
         dtr = lgb.Dataset(X[tr], y[tr])
         dva = lgb.Dataset(X[va], y[va], reference=dtr)
-        m = lgb.train(PARAMS, dtr, MAX_ROUNDS, valid_sets=[dtr, dva], valid_names=["train", "valid"],
-                      callbacks=[lgb.early_stopping(100, verbose=False),
+        m = lgb.train(PARAMS, dtr, rounds, valid_sets=[dtr, dva], valid_names=["train", "valid"],
+                      callbacks=[lgb.early_stopping(ES_ROUNDS, verbose=False),
                                  run.lgb_callback(fold=int(stage * 10 + k))])
         oof[va] = m.predict(X[va], num_iteration=m.best_iteration)
-        # overfit signal for mlguard: F0.5@0.5 on a training-fold entity subsample vs the valid fold
+        # overfit signal: F0.5@0.5 on a training-fold entity subsample vs the valid fold
         tr_ents = pairs.loc[tr, "s1_id"].unique()
         sub = np.isin(pairs["s1_id"].to_numpy(), rng.choice(tr_ents, min(5000, len(tr_ents)), replace=False))
         p_tr = m.predict(X[sub], num_iteration=m.best_iteration)
         tc_tr = truth_count.loc[pairs.loc[sub, "s1_id"].unique()]
         tc_va = truth_count.loc[pairs.loc[va, "s1_id"].unique()]
-        rows.append(dict(fold=int(stage * 10 + k), best_iter=int(m.best_iteration), max_iter=MAX_ROUNDS,
+        rows.append(dict(fold=int(stage * 10 + k), best_iter=int(m.best_iteration), max_iter=rounds,
                          train_score=entity_f05(pairs[sub], y[sub], p_tr, 0.5, tc_tr),
                          valid_score=entity_f05(pairs[va], y[va], oof[va], 0.5, tc_va)))
         models.append(m)
@@ -263,7 +283,7 @@ def rate_stats(selected, ids, country):
 
 def main(a):
     run_id = a.run_id or time.strftime("v2_%Y%m%d_%H%M")
-    run = RunLog(a.run_dir or os.environ.get("MLGUARD_RUN_DIR") or Path(C.ROOT) / "runs" / run_id)
+    run = RunLog(a.run_dir or Path(C.ROOT) / "runs" / run_id)
     log(f"run {run_id} -> {run.dir}")
 
     # ---------------- train: candidates, labels, features

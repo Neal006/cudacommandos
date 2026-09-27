@@ -1,5 +1,8 @@
 # Master Plan — Business Entity Resolution (Amazon ML Challenge 2026)
 
+> **2026-09-27:** the Rust `mlguard` checker was removed (branch `nealultraprohopeso`).
+> References to it below, and in the other master-plan docs, are historical.
+
 **Merged to `main` on 2026-09-25.** This is the team's plan of record — the
 working pipeline, the analysis, and the `mlguard` trust checker now live
 together on `main`, and that is where work continues.

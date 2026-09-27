@@ -383,7 +383,6 @@ docs/EXPERIMENTS.md   append-only log of every run — add submissions here
 docs/DATA_BRIEF.md    measured facts about the data
 docs/SUBMISSION.md    output format and the rules that get you rejected
 context/              every original source document
-tools/mlguard/        Rust checker that catches leakage/overfitting (Neal)
 ```
 
 ## 11. How long does training take, and where should it run?

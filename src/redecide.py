@@ -57,10 +57,10 @@ def parse_cfg(s: str):
     if len(parts) != 3:
         raise SystemExit(f"bad --cfg {s!r}; want assign:select:value")
     a, sel, v = parts
-    if sel not in ("expected_f", "threshold"):
+    if sel not in ("expected_f", "expected_f_exact", "threshold"):
         raise SystemExit(f"bad select {sel!r}")
     cfg = {"assign": a, "select": sel,
-           "miss": float(v) if sel == "expected_f" else None,
+           "miss": float(v) if sel != "threshold" else None,
            "thr": float(v) if sel == "threshold" else None}
     return country, cfg
 
@@ -71,6 +71,7 @@ def main(a):
     p = np.load(a.scores)
     if len(p) != len(pairs):
         raise SystemExit(f"scores {len(p):,} != pairs {len(pairs):,}")
+    D.check_score_meta(a.scores, pairs)   # same length is not same row order
     log(f"{len(pairs):,} pairs, scores from {a.scores}")
 
     default, per_country = None, {}

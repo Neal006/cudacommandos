@@ -88,13 +88,10 @@ We turn probabilities into yes/no answers:
 ### Stage 7: Writing and checking the output
 We write the answer file (one row per Book 1 business, with its matches) plus the shortlist file the organizers audit. Then we run the official validator and our own checker.
 
-## Safety net: mlguard
-A separate watchdog program written in **Rust** (a fast, crash-resistant language). It:
-- **Watches training live** and stops it if the model starts memorizing instead of learning ("overfitting").
-- **Checks the final file** for problems like missing rows, bad IDs, or suspiciously empty output.
-- **Runs automatically on GitHub** whenever code changes.
-
-*Why:* no file gets uploaded without passing it.
+## Safety net
+Every run writes its training curves and fold scores to `runs/<id>/` (metrics.jsonl, summary.json).
+Before an upload, the official `validate_submission.py` must pass. GitHub runs the data-free tests
+on every push. (The old Rust watchdog, mlguard, was removed on 2026-09-27.)
 
 ## How we measure ourselves before submitting
 We can't see the test answers, so we use **cross-validation**. We split the training businesses into 5 groups, train on 4, test on the 5th, and rotate. The resulting score is called **OOF** ("out-of-fold").

@@ -303,7 +303,6 @@ source in `src/`, a `README.md` giving exact reproduction steps, and a pinned
 | `redecide.py` | Re-run the decision layer over cached scores in ~1 min |
 | `diagnose_country.py` | Label-free per-country diagnosis |
 | `data.py` | TSV I/O and the output writer, which enforces the format rules as it writes |
-| `tools/mlguard/` | An independent Rust checker (overfitting, fold variance, submission format) run beside training and in CI |
 
 Reproduce:
 
@@ -337,12 +336,9 @@ US searches *fewer* records than India and is twice as fast — Indian names and
 addresses share more tokens, so posting lists are denser. Full test blocking is
 52 minutes; scoring all 52M pairs is 117 minutes.
 
-**Reproducibility and guards.** Every training run is gated by `mlguard`, an
-independent Rust checker that watches the metrics stream during training
-(overfitting gap, fold variance, validation/train loss ratio), verifies the
-finished run, and validates submission format. It runs in CI as well. A guard
-stop rolls LightGBM back to its best validation iteration rather than keeping the
-stopped one.
+**Reproducibility.** Every training run logs its per-fold train/valid curves and
+scores to `runs/<id>/`, and every submission passes the official validator. CI
+runs a fair-play import gate and the data-free unit tests on every push.
 
 **Compliance.** No external data, APIs, geocoders, registries or internet
 augmentation are used at any stage. The final pipeline uses LightGBM (MIT),
