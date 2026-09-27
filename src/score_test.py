@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C
 import data as D
 import decide
+import hopeso
 import ingest
-from run_pipeline import cached_candidates
 from run_v2 import log, predict_test_chunked, rate_stats, stats_for
 
 
@@ -50,6 +50,12 @@ def main(a):
     log(f"loaded {run_dir/'model.pkl'}: {len(models1)} stage-1 models, "
         f"{len(models2) if models2 else 0} stage-2, decision {best}")
 
+    # The frame is part of the model: scoring a hopeso-trained model on the base
+    # frame drops every recovered candidate without any error. v2 runs have no tag.
+    trained_tag = bundle.get("cands_tag")
+    if trained_tag != a.cands_tag:
+        raise SystemExit(f"model was trained on cands tag {trained_tag!r}, "
+                         f"but --cands-tag is {a.cands_tag!r}")
     needs_rerank = models2 is not None and "rr" in feat2
     if needs_rerank and not a.rerank:
         raise SystemExit("this model was trained with the band reranker; pass --rerank <dir>")
@@ -61,7 +67,8 @@ def main(a):
     t1_, t2_, t3_ = ingest.load_split_lean("test")
     test_ids = t1_[C.ID].astype(str).tolist()
     t_country = pd.Series(t1_[C.COUNTRY].astype(str).to_numpy(), index=test_ids)
-    _, t_pairs = cached_candidates(t1_, t2_, t3_, "test", None, frame_only=True)
+    # must be the frame the model was trained on (base, or --cands-tag hopeso)
+    t_pairs = hopeso.load_frame(t1_, t2_, t3_, "test", None, a.cands_tag)
     del t1_, t2_, t3_
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
@@ -125,6 +132,8 @@ if __name__ == "__main__":
     ap.add_argument("--run", required=True, help="run dir holding model.pkl, e.g. runs/007_v2_full")
     ap.add_argument("--chunk", type=int, default=C.TEST_CHUNK_PAIRS,
                     help="pairs per entity-aligned chunk (lower = less RAM, more overhead)")
+    ap.add_argument("--cands-tag", default=None,
+                    help="score the tagged candidate frame (e.g. 'hopeso'); must match training")
     ap.add_argument("--rerank", default=None, help="band reranker dir, if the model was trained with one")
     ap.add_argument("--band", type=float, nargs=2, default=(0.2, 0.8),
                     help="stage-1 band sent to the reranker; must match training")

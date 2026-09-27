@@ -152,6 +152,8 @@ def write_outputs(test_s1_ids, matches: dict, candidates: dict):
     """Write both required output files and report a sanity summary."""
     m = write_submission(C.MATCHING_RESULTS, test_s1_ids, matches, C.GT_S1, C.GT_MATCH)
     c = write_submission(C.CANDIDATE_PAIRS, test_s1_ids, candidates, C.GT_S1, C.OUT_CAND)
+    if len(c) != len(m):
+        raise ValueError(f"candidate_pairs has {len(c)} rows, matching_results {len(m)}")
 
     # Final matches must be a subset of candidates — the official validator
     # warns otherwise, and it always means a pipeline bug.

@@ -207,8 +207,10 @@ def entity_f05(pairs, y, p, thr, truth_count):
     return decide.macro_f05(sel[sel["p"] >= thr], truth_count)
 
 
-def fit_cv(X, y, pairs, folds, truth_count, run, stage):
-    """GroupKFold LightGBM. Returns OOF scores, fold models, mlguard fold rows."""
+def fit_cv(X, y, pairs, folds, truth_count, run, stage, rounds=None):
+    """GroupKFold LightGBM. Returns OOF scores, fold models, mlguard fold rows.
+    `rounds` caps boosting (default MAX_ROUNDS); passed, not patched into this module."""
+    rounds = rounds or MAX_ROUNDS
     oof = np.zeros(len(X))
     models, rows = [], []
     rng = np.random.default_rng(C.SEED)
@@ -216,7 +218,7 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage):
         tr, va = folds != k, folds == k
         dtr = lgb.Dataset(X[tr], y[tr])
         dva = lgb.Dataset(X[va], y[va], reference=dtr)
-        m = lgb.train(PARAMS, dtr, MAX_ROUNDS, valid_sets=[dtr, dva], valid_names=["train", "valid"],
+        m = lgb.train(PARAMS, dtr, rounds, valid_sets=[dtr, dva], valid_names=["train", "valid"],
                       callbacks=[lgb.early_stopping(100, verbose=False),
                                  run.lgb_callback(fold=int(stage * 10 + k))])
         oof[va] = m.predict(X[va], num_iteration=m.best_iteration)
@@ -226,7 +228,7 @@ def fit_cv(X, y, pairs, folds, truth_count, run, stage):
         p_tr = m.predict(X[sub], num_iteration=m.best_iteration)
         tc_tr = truth_count.loc[pairs.loc[sub, "s1_id"].unique()]
         tc_va = truth_count.loc[pairs.loc[va, "s1_id"].unique()]
-        rows.append(dict(fold=int(stage * 10 + k), best_iter=int(m.best_iteration), max_iter=MAX_ROUNDS,
+        rows.append(dict(fold=int(stage * 10 + k), best_iter=int(m.best_iteration), max_iter=rounds,
                          train_score=entity_f05(pairs[sub], y[sub], p_tr, 0.5, tc_tr),
                          valid_score=entity_f05(pairs[va], y[va], oof[va], 0.5, tc_va)))
         models.append(m)

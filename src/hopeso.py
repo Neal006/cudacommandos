@@ -137,13 +137,22 @@ def fill_sim(new: pd.DataFrame, split: str, n=None) -> np.ndarray:
     blob_of = pd.Series(others["_blob"].to_numpy(), index=others[C.ID].to_numpy())
     s1_blob = pd.Series(s1["_blob"].to_numpy(), index=s1[C.ID].astype(str).to_numpy())
     del s2, s3, others
+    # Tokenize each distinct blob ONCE (transform is single-threaded Python;
+    # new pairs repeat the same S1 ~8x and the same record many times), then
+    # gather rows by position. Unknown ids would silently score 0, so refuse them.
+    s_u, s_ix = np.unique(new["s1_id"].to_numpy(), return_inverse=True)
+    c_u, c_ix = np.unique(new["cand_id"].to_numpy(), return_inverse=True)
+    missing = int(pd.Index(s_u).isin(s1_blob.index).__invert__().sum()
+                  + pd.Index(c_u).isin(blob_of.index).__invert__().sum())
+    if missing:
+        raise SystemExit(f"fill_sim: {missing} ids have no blob -- frame and split disagree")
+    A = vec.transform(s1_blob.reindex(s_u).to_numpy())
+    B = vec.transform(blob_of.reindex(c_u).to_numpy())
     out = np.empty(len(new), dtype=np.float32)
     step = 2_000_000
     for a in range(0, len(new), step):
-        sl = new.iloc[a:a + step]
-        A = vec.transform(s1_blob.reindex(sl["s1_id"]).fillna("").to_numpy())
-        B = vec.transform(blob_of.reindex(sl["cand_id"]).fillna("").to_numpy())
-        out[a:a + len(sl)] = np.asarray(A.multiply(B).sum(1)).ravel()
+        b = min(a + step, len(new))
+        out[a:b] = np.asarray(A[s_ix[a:b]].multiply(B[c_ix[a:b]]).sum(1)).ravel()
     return out
 
 
@@ -155,9 +164,27 @@ def base_frame(split: str, n=None) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
-def tag_path(split: str, n=None, tag="hopeso") -> Path:
+def tag_path(split: str, n=None, tag="hopeso", vibe=VIBE) -> Path:
+    """The pass settings are in the name: change VIBE and a stale frame can't be reused."""
+    v = f"t{vibe['sib_top']}c{vibe['sib_cap']}d{vibe.get('dost_cap', 0)}"
     return C.INTERIM / (f"cands_{split}_k{C.TOP_K}_df{C.BLOCK_MAX_DF}_mdf{C.BLOCK_MIN_DF}"
-                        f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{n or 'all'}_{tag}.parquet")
+                        f"_ctry{int(C.BLOCK_WITHIN_COUNTRY)}_n{n or 'all'}_{tag}_{v}.parquet")
+
+
+def load_frame(s1, s2, s3, split, n=None, tag=None):
+    """The candidate frame every consumer must share: base blocker, or base ∪
+    hopeso passes when `tag` is set. run_v4 (train + test) and score_test (test)
+    both call this, so a model trained on the tagged frame is never scored on
+    the untagged one."""
+    if not tag:
+        from run_pipeline import cached_candidates
+        return cached_candidates(s1, s2, s3, split, n, frame_only=True)[1]
+    path = tag_path(split, n, tag)
+    if not path.exists():
+        raise SystemExit(f"{path.name} missing -- run: python src/hopeso.py build "
+                         f"--split {split}" + (f" --n {n}" if n else ""))
+    log(f"loading tagged candidates: {path.name}")
+    return pd.read_parquet(path)
 
 
 def build(split: str, n=None):

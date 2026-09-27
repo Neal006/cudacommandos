@@ -49,14 +49,17 @@ Research on Foursquare 2022 (the closest Kaggle match) says graph and sibling tr
 
 ## How to run on the big SageMaker box
 
-Use `ml.m7i.48xlarge` (192 cores, 768 GB) with `AMLC_WORKERS=64`.
+Take a second `ml.m7i.48xlarge` (192 cores, 768 GB) so it runs in parallel with 004, not after it. First copy the full train and test candidate caches from run 011 into `interim/`, otherwise step 1 blocks again for 2 hours.
 
 ```
+export AMLC_WORKERS=176 AMLC_BLOCK_THREADS=176
 python src/hopeso.py build --split train
 python src/hopeso.py build --split test
-python src/run_v4.py --sample 150000 --rerank models/rr_e5s --rounds 4000 --cands-tag hopeso --train-only
-python src/score_test.py --run runs/<id> --rerank models/rr_e5s
+python src/run_v4.py --sample 150000 --rerank models/rr_e5s --rounds 4000 --chunk 4000000 --cands-tag hopeso --train-only
+python src/score_test.py --run runs/<id> --rerank models/rr_e5s --chunk 4000000
 ```
+
+Upload only if the validator says PASS and links per entity per country look sane against 003.
 
 ## Honest expectation
 

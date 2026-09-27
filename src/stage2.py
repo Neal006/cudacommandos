@@ -118,8 +118,8 @@ def gang(s1, key, p1, valid):
       mx   best stage-1 score among those siblings, EXCLUDING itself (-1 if none)
     Groups by (s1_id, key), so it is safe inside entity-aligned chunks.
     """
-    ok = valid & pd.notna(key)
-    ok &= np.array([bool(k) for k in key], dtype=bool)
+    ks = pd.Series(key, dtype="object")
+    ok = valid & ks.notna().to_numpy() & (ks.fillna("").astype(str).str.len() > 0).to_numpy()
     n = np.zeros(len(p1))
     mx = np.full(len(p1), -1.0)
     if not ok.any():

@@ -155,7 +155,16 @@ s1k = pl.DataFrame({"entity_id": ["S1-A"], "country": ["India"], "cn": ["ram med
 assert set(hopeso.dost(s1k, k, "cn", cap=10)["cand_id"]) == {"S2-1", "S2-2", "S3-3"}
 new = hopeso.extras(base, s1k, k, dict(sib_top=1, sib_cap=50, dost_cap=10))
 assert set(new["cand_id"]) == {"S2-2", "S3-3"}, "extras must drop pairs the base already has"
-print("7 ok: sibs/dost stay in-country, respect caps, extras is base-disjoint")
+p_def = hopeso.tag_path("test", None)
+p_alt = hopeso.tag_path("test", None, vibe=dict(sib_top=5, sib_cap=20, dost_cap=0))
+assert p_def != p_alt and "_t3c50d10" in p_def.name, "pass settings must be in the cache name"
+try:
+    hopeso.load_frame(None, None, None, "test", None, tag="no_such_tag_zz")
+    raise AssertionError("a missing tagged frame must stop the run, not fall back to base")
+except SystemExit as e:
+    assert "hopeso.py build" in str(e)
+print("7 ok: sibs/dost stay in-country, respect caps, extras is base-disjoint, "
+      "cache name carries settings, missing tagged frame stops")
 
 # ---- 8: gang features: count siblings, best OTHER sibling, ties, empty keys
 s1g = np.array(["A", "A", "A", "A", "B", "B"])

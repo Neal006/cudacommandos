@@ -69,13 +69,13 @@ import data as D
 import decide
 import features as F
 import features_v2 as F2
+import hopeso
 import ingest
 import stage2 as S2
 from metrics import blocking_recall
-from run_pipeline import cached_candidates
 from runlog import RunLog
 import run_v2 as V2
-from run_v2 import (entity_f05, featurize, fit_cv, log, predict,
+from run_v2 import (featurize, fit_cv, log, predict,
                     predict_test_chunked, rate_stats, rerank_feature, stats_for)
 
 
@@ -84,18 +84,8 @@ def _codes(s: pd.Series) -> np.ndarray:
     return pd.factorize(s, sort=False)[0].astype(np.int32)
 
 
-def load_frame(s1, s2, s3, split, n, tag):
-    """Base blocker frame, or the base ∪ hopeso-passes frame when `tag` is set.
-    The tagged frame is built beforehand by `python src/hopeso.py build`."""
-    if not tag:
-        return cached_candidates(s1, s2, s3, split, n, frame_only=True)[1]
-    import hopeso
-    path = hopeso.tag_path(split, n, tag)
-    if not path.exists():
-        raise SystemExit(f"{path.name} missing -- run: python src/hopeso.py build "
-                         f"--split {split}" + (f" --n {n}" if n else ""))
-    log(f"loading tagged candidates: {path.name}")
-    return pd.read_parquet(path)
+# measured mean n_claims on the test frame (docs/CHASING99.md); log context only
+TEST_CONTENTION = 5.549
 
 
 def pick_holdout(s1_ids: pd.Series, excluded: set, n: int, seed: int = C.SEED) -> set:
@@ -174,9 +164,7 @@ def main(a):
     # fit_cv reads run_v2.MAX_ROUNDS directly. Fold 1 hit the 2000 default at
     # 150k -- it was still improving when the cap cut it off -- so --rounds
     # raises it for this process only. run_v2.py on disk is untouched.
-    if a.rounds != V2.MAX_ROUNDS:
-        log(f"raising MAX_ROUNDS {V2.MAX_ROUNDS} -> {a.rounds}")
-        V2.MAX_ROUNDS = a.rounds
+    log(f"boosting cap {a.rounds} rounds (run_v2 default {V2.MAX_ROUNDS})")
     run_id = a.run_id or time.strftime("v4_%Y%m%d_%H%M")
     run = RunLog(Path(os.environ.get("MLGUARD_RUN_DIR") or (Path(C.ROOT) / "runs" / run_id)))
     log(f"run {run_id} -> {run.dir}")
@@ -187,7 +175,7 @@ def main(a):
     # one seeded permutation, so the --sample set is nested inside it). Full
     # scale is the default; a small frame is for fast, local verification.
     s1_all, s2, s3 = ingest.load_split_lean("train", sample=a.frame)
-    full_pairs = load_frame(s1_all, s2, s3, "train", a.frame, a.cands_tag)
+    full_pairs = hopeso.load_frame(s1_all, s2, s3, "train", a.frame, a.cands_tag)
     full_pairs = full_pairs.sort_values("s1_id", kind="mergesort").reset_index(drop=True)
     log(f"full train frame: {len(full_pairs):,} pairs over {full_pairs['s1_id'].nunique():,} entities")
 
@@ -224,7 +212,7 @@ def main(a):
     cand_codes_full = _codes(full_pairs["cand_id"])
     log(f"contention: full frame mean n_claims "
         f"{len(full_pairs) / len(np.unique(cand_codes_full)):.3f}  "
-        f"(sample-only would be {len(pairs) / pairs['cand_id'].nunique():.3f}, test is 5.549)")
+        f"(sample-only would be {len(pairs) / pairs['cand_id'].nunique():.3f}, test is {TEST_CONTENTION})")
 
     # ---------------- labels and folds, on the sample only
     s1_ids = sorted(sample_ids)
@@ -251,7 +239,7 @@ def main(a):
     base_df = pairs[["s1_id", "cand_id"]].assign(y=y)
 
     # ---------------- B. stage 1 on the sample, out of fold
-    p1_oof, models1, rows1 = fit_cv(X.to_numpy(), y, pairs, folds, truth_count, run, stage=1)
+    p1_oof, models1, rows1 = fit_cv(X.to_numpy(), y, pairs, folds, truth_count, run, stage=1, rounds=a.rounds)
     _, t1 = decide.tune(base_df.assign(p=p1_oof), truth_count)
     s1_score = float(t1["f05"].max())
     log(f"stage 1: {s1_score:.4f}")
@@ -273,7 +261,7 @@ def main(a):
     claims = claims_full[in_sample].reset_index(drop=True)
     naive = S2.build_claims(pairs[["cand_id"]], p1_oof)
     log(f"claims: full-frame mean n_claims {claims['n_claims'].mean():.3f} "
-        f"vs sample-only {naive['n_claims'].mean():.3f} (test is 5.549)")
+        f"vs sample-only {naive['n_claims'].mean():.3f} (test is {TEST_CONTENTION})")
     summary["train_mean_n_claims"] = float(claims["n_claims"].mean())
     summary["train_mean_n_claims_naive"] = float(naive["n_claims"].mean())
     # The holdout keeps exactly what test will have: fold-mean p1, full claims.
@@ -293,7 +281,7 @@ def main(a):
         X2["rr"] = rerank_feature(a.rerank, pairs, p1_oof, L, R, a.band)
     feat2 = list(X2.columns)
     log(f"stage 2 features {X2.shape}")
-    p2_oof, models2, rows2 = fit_cv(X2.to_numpy(), y, pairs, folds, truth_count, run, stage=2)
+    p2_oof, models2, rows2 = fit_cv(X2.to_numpy(), y, pairs, folds, truth_count, run, stage=2, rounds=a.rounds)
     _, t2 = decide.tune(base_df.assign(p=p2_oof), truth_count)
     s2_score = float(t2["f05"].max())
     log(f"stage 2: {s2_score:.4f}")
@@ -371,7 +359,7 @@ def main(a):
     run.write_summary(**summary)
     (run.dir / "model.pkl").write_bytes(pickle.dumps(dict(
         models1=models1, models2=models2, feat1=feat1, feat2=feat2,
-        calibrator=calibrator, decision=best)))
+        calibrator=calibrator, decision=best, cands_tag=a.cands_tag)))
     log(f"OOF {best['f05']:.4f}  (stage1 {s1_score:.4f} -> stage2 {s2_score:.4f})")
 
     if a.train_only:
@@ -385,7 +373,7 @@ def main(a):
     t1_, t2_, t3_ = ingest.load_split_lean("test")
     test_ids = t1_[C.ID].astype(str).tolist()
     t_country = pd.Series(t1_[C.COUNTRY].astype(str).to_numpy(), index=test_ids)
-    t_pairs = load_frame(t1_, t2_, t3_, "test", None, a.cands_tag)
+    t_pairs = hopeso.load_frame(t1_, t2_, t3_, "test", None, a.cands_tag)
     del t1_, t2_, t3_
     gc.collect()
     t_pairs = t_pairs.reset_index(drop=True)
