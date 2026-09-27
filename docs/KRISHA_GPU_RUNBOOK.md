@@ -149,8 +149,21 @@ git fetch origin
 git checkout fix/t4-fp16
 ```
 
-Then launch the GPU job exactly as before. **No argument changes.**
-`train_entry_gpu.py` now targets e5 and configures itself for the T4.
+Then:
+
+```bash
+python launch_training_gpu.py
+```
+
+That is the whole command. `launch_training_gpu.py` (runs on your laptop,
+submits the job) and `train_entry_gpu.py` (runs inside the container) are both
+updated -- e5 instead of laya, and configured for the T4.
+
+**One bug was fixed in the launcher itself:** `requirements_file` pointed at
+`requirements-gpu.txt`, but the file is at `src/requirements-gpu.txt`.
+SageMaker resolves that path relative to `source_dir`, so it was finding
+nothing, installing none of the pins, and the job would have failed later on
+an import rather than saying so up front.
 
 ### What you keep
 
