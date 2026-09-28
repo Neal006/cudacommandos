@@ -246,3 +246,97 @@ scores shift slightly with thread count and CPU architecture and pairs sitting
 exactly on the top-K / min-p boundary can fall either way. Between two executions
 of the pipeline this moved 2,474 of 5,757,784 matched pairs — 0.043%. Pin
 `ER_JOBS` to make two runs agree.
+
+---
+
+### C. Other approaches explored
+
+**Everything in this appendix comes from a second, separately built pipeline,
+not from the one described above and not from the code in `code/`.** The team
+developed two solutions in parallel; this one peaked at **0.959** on the
+leaderboard and was not submitted. It is recorded because the negative results
+are the useful part, and because comparing the two explains why the submitted
+design wins.
+
+That pipeline: word TF-IDF blocking per country at K=30, ~30 rapidfuzz pair
+features, a two-stage LightGBM under GroupKFold, a decision layer, and an
+optional `multilingual-e5-small` cross-encoder reranking an uncertain band.
+Architecturally close to the submitted one; the difference is almost entirely
+in retrieval.
+
+#### C.1 What it scored
+
+| | blocking recall | OOF F0.5 | leaderboard |
+|---|---|---|---|
+| baseline, 150k sample | 0.9498 | 0.9532 | 0.943 |
+| + reranker | 0.9498 | 0.9626 | 0.953 |
+| + contention fix | 0.9498 | 0.9644 | — |
+| + sibling expansion | 0.9630 | 0.9602 | — |
+| + sibling expansion and reranker | 0.9630 | 0.9685 | **0.959** |
+
+The OOF→leaderboard gap was **−0.0098**, and remarkably stable across four
+uploads (−0.0102, −0.0097, −0.0096, −0.0095). The submitted pipeline's gap is
+−0.0015. That difference is the clearest single argument for the orphan-holdout
+validation design: this pipeline's validation was consistently optimistic by a
+full point, and knowing the constant let us predict uploads but never fix them.
+
+#### C.2 The ceiling calculation that redirected the work
+
+A perfect matcher over a candidate set with recall R scores `1.25R / (0.25 + R)`
+under macro F0.5. That formula turned out to be the most useful thing in the
+project:
+
+Comparing what each matcher actually receives:
+
+| pipeline | recall of the set the matcher scores | perfect-matcher ceiling |
+|---|---|---|
+| other, baseline blocking | 0.9498 | 0.98954 |
+| other, with sibling expansion | 0.9630 | 0.99237 |
+| **submitted, after pruning** | **0.98862** | **0.99770** |
+
+At 0.9498 that pipeline was already at 97.3% of its own ceiling, so the remaining
+loss was matcher precision rather than retrieval — which is why four separate
+recall projects were stopped. But the same arithmetic shows the hard limit:
+**it could not have reached 0.985 however good its matcher became**, because its
+ceiling was 0.99237 and it was scoring 0.9685 against it. The submitted pipeline
+hands its matcher a set with 0.98862 recall and a 0.99770 ceiling. That headroom,
+not a better model, is where most of the 0.026 difference in leaderboard score
+comes from.
+
+#### C.3 Negative results
+
+Each was killed by an adoption gate written before the measurement, which is
+why they are worth recording:
+
+| idea | measured | verdict |
+|---|---|---|
+| multi-retriever union | +0.0162 recall for +40% candidates | worse per candidate than sibling expansion (+0.0127 for +27%) |
+| address-anchored blocking keys | best new key recovered 113 misses per candidate vs 185 for the existing one | all three new keys less efficient |
+| widening the existing key caps | +0.0019 ceiling for **18.6×** the candidates | off the efficient frontier |
+| early-stopping patience 100 → 500 | 0.9533 → 0.9532 | fold variation averages out; no effect |
+| `bge-reranker-v2-m3` | valid AUC 0.99959 vs e5-small's 0.99907, but 69 pairs/s on CPU = 14.5 h | better model, wrong hardware |
+| per-source decision thresholds | +0.0004 | under the +0.0010 adoption gate |
+| ensembling two runs | members correlate r=0.9932 | every blend lost |
+
+The recurring lesson is that under F0.5 a candidate is not free. Precision is
+weighted four times recall, so every extra candidate is contention the matcher
+has to beat, and recall bought inefficiently makes the score worse. That is the
+same reasoning behind the `(K=20, min-p=0.005)` operating point in B.2.
+
+#### C.4 One bug worth recording
+
+Stage-2 contention features were computed over the 150k training sample but
+applied to the full frame at inference, so the feature meant different things in
+training and scoring:
+
+| | claims per record |
+|---|---|
+| train, sample only | 1.957 |
+| train, full frame | 6.717 |
+| test | 5.549 |
+
+Fixing it moved OOF 0.9626 → 0.9644 — a gain that had been predicted impossible,
+since out-of-fold evaluation cannot see a train/test feature mismatch by
+construction. It moved anyway, which meant the sample-only counts were noisy as
+well as mis-scaled. Any feature computed over a sample and applied to a full
+frame deserves this check.
