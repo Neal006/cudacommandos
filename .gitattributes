@@ -3,3 +3,10 @@
 # "set -euo pipefail\r: command not found". Pin the scripts to LF so the
 # same checkout runs in Git Bash and on Linux/AWS.
 *.sh text eol=lf
+
+# Everything that goes into the submission package is pinned to LF too, so the
+# zip rebuilt from a fresh clone is byte-identical to the one built here
+# regardless of the checkout platform.
+final_push/** text eol=lf
+final_push/output/*.gz binary
+final_push/*.zip binary
