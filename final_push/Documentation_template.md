@@ -13,7 +13,17 @@ LightGBM (stage 1) and a context-aware LightGBM (stage 2), followed by a
 decision layer that enforces the one-to-one structure of the ground truth and
 chooses, per Source-1 entity, the subset of candidates that maximises expected
 F0.5. An optional multilingual cross-encoder adds scores on the ambiguous band.
-Measured out-of-fold macro F0.5 on held-out train S1: **0.98654**.
+
+**Leaderboard score: 0.985.** Measured out-of-fold on held-out train S1
+beforehand: **0.98654**.
+
+**Compute.** Everything is CPU work apart from the optional cross-encoder. The
+full-data stages ran on a single AWS `c7i.48xlarge` (192 vCPU, 384 GB, Ubuntu
+22.04, Python 3.11) with `ER_JOBS=64`; a Windows laptop handled packaging,
+validation and the output checks. Peak memory is about 30 GB, so a 48 GB box is
+enough — the large instance buys wall-clock, not headroom. `io → prune` takes 86
+minutes there and the whole pipeline about 3 hours. No managed or third-party
+service is used at any point: the only inputs are the provided TSVs.
 
 ---
 
@@ -67,6 +77,11 @@ TSV -> parquet (io_utils) -> splits (20% hidden S1 + 5 folds)
   300 records. Union of all blockers, keeping each blocker's score and rank.
 - **Candidate pairs generated:** the pruned set, at most top-20 per S1 plus the
   per-source and best-S1 keeps below; written to `output/candidate_pairs.tsv`.
+  The union holds 101.9 candidates per S1 (recall 0.99069 on Q); pruning brings
+  that to **7.72 per S1** (13.37M test pairs) for 0.21% of true pairs lost in
+  each of India and US. Pairs per S1 by country: France 10.25, India 7.80,
+  US 6.63 — France, which has no training labels, is not pruned harder than the
+  countries that do.
 - **How you ensured true matches were not lost:** a dedicated prune model scores
   the full union, and a pair is kept if it is in its S1's top K=20 with score
   >= 0.005, **or** in the top 10 from S2 or from S3 separately, **or** it is the
@@ -100,9 +115,13 @@ including the empty set.
 
 ## 5. Results & Error Analysis
 
-- **F_0.5 Score (macro):** 0.98654 out-of-fold on 1.77M held-out train S1 with
-  20% of S1 hidden as orphans (US 0.98731, India 0.98537, singletons 0.98733).
-  The test output passes `validate_submission.py`.
+- **F_0.5 Score (macro):** **0.985 on the leaderboard.** Measured out-of-fold at
+  0.98654 on 1.77M held-out train S1 with 20% of S1 hidden as orphans
+  (US 0.98731, India 0.98537, singletons 0.98733) — an offline-to-leaderboard
+  gap of 0.0015, which is the main evidence that the validation design holds up:
+  hiding a fifth of S1 makes the held-out set carry the same share of
+  businesses-with-no-match the test set has, and that is the case macro F0.5
+  punishes hardest. The test output passes `validate_submission.py --check-ids`.
 - **Common false positives (wrong merges):** same-name businesses in the same
   locality with different house numbers or units (branches, chains).
 - **Common false negatives (missed matches):** records whose name differs by
@@ -134,7 +153,9 @@ were the main gain of stage 2 over stage 1.
 - `requirements.txt` — pinned dependencies.
 
 Reproduce: place the data at `dataset/{train,test}/`, then
-`cd code/business_entity_resolution/src && python run_pipeline.py`.
+`cd code/business_entity_resolution/src && ER_JOBS=64 python run_pipeline.py`.
+`ER_JOBS` also fixes LightGBM's thread count, so pinning it is what makes two
+runs line up; `README.md` covers this under "Determinism".
 
 ### B. Additional Results
 

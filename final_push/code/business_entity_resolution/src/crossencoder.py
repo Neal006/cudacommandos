@@ -1,6 +1,6 @@
 """Cross-encoder (plan §E.2).
 
-Mac side (needs the work/ parquet files):
+CPU box (needs the work/ parquet files):
   python crossencoder.py export            -> work/ce/{train_pairs,band_train,band_test}.parquet
   python crossencoder.py pseudo            -> work/ce/pseudo_fr.parquet   (France pseudo-labels from s2_test)
 GPU side (A10G; copy work/ce/ over, results back):
@@ -25,7 +25,7 @@ CE_DIR = Path(os.environ.get("ER_CE_DIR") or
 
 
 # ----------------------------------------------------------------------------------------------
-# Mac side: exports
+# CPU box: exports
 # ----------------------------------------------------------------------------------------------
 def _texts(split):
     import polars as pl
@@ -124,7 +124,7 @@ def _device():
 
 
 def pack(names=("train_pairs", "band_train", "band_test")):
-    """Mac side: shrink the export for slow links (unique texts once + integer pairs, zstd-22)."""
+    """CPU box: shrink the export for slow links (unique texts once + integer pairs, zstd-22)."""
     import polars as pl
     for name in names:
         d = pl.read_parquet(CE_DIR / f"{name}.parquet")
@@ -154,7 +154,6 @@ def _load(name, columns):
 
 
 def train(args):
-    import pyarrow.parquet as pq
     import torch
     from sklearn.metrics import average_precision_score
     from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup

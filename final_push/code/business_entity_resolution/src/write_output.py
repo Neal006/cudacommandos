@@ -29,7 +29,11 @@ def main(argv=None):
     ap.add_argument("--score-col", default="p2")
     args = ap.parse_args(argv)
 
-    params = json.load(open(args.params)) if args.params else load_params()
+    if args.params:
+        with open(args.params) as fh:
+            params = json.load(fh)
+    else:
+        params = load_params()
     rec = load_records("test", ["idx", "entity_id", "src", "country"])
     ids = rec.select("idx", "entity_id")
     s1_all = rec.filter(pl.col("src") == 1).select(pl.col("idx").alias("s1"), "entity_id")

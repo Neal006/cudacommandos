@@ -5,7 +5,6 @@ Tiers:
   full               -> stage-1 model on the pruned candidate set
 Set features use a numba merge over sorted token-id arrays (CSR); string similarities use rapidfuzz cpdist.
 """
-import math
 import time
 
 import numpy as np

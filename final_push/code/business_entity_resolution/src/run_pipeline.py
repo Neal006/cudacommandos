@@ -1,4 +1,4 @@
-"""End-to-end orchestrator (Mac / CPU side).
+"""End-to-end orchestrator (CPU side).
 
   python run_pipeline.py                     # everything: data -> blocking -> models -> output
   python run_pipeline.py --from prune        # resume from a stage (earlier stages' parquet files reused)

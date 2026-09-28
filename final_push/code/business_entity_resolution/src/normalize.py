@@ -10,9 +10,8 @@ import re
 import sys
 import unicodedata
 from collections import Counter
-from multiprocessing import Pool
+from multiprocessing import get_context
 
-import numpy as np
 import polars as pl
 
 from config import N_JOBS, SPLITS, wpath
@@ -137,7 +136,7 @@ STREET_WORDS = {
     "apartment", "suite", "floor", "box", "po", "rue", "impasse", "allee", "chemin", "cours", "quai",
     "faubourg", "residence", "passage", "promenade", "sentier", "lotissement", "near", "opposite", "behind",
     "beside", "sector", "block", "cross", "main", "marg", "flat", "plot", "house", "door", "shop", "office",
-    "building", "tower", "complex", "floorsant", "phase", "stage", "gali", "lane", "bis", "ter",
+    "building", "tower", "complex", "floorsant", "phase", "stage", "gali", "bis", "ter",
 }
 LANDMARK = {"near", "opposite", "behind", "beside", "opp", "nr", "next"}
 HN_MARK = re.compile(
@@ -391,7 +390,7 @@ def norm_addr(raw: str, country: str):
     for d in re.findall(r"\d+", " ".join(comps)):
         nums.add(d.lstrip("0") or "0")
     land = any(set(c.split()) & LANDMARK for c in comps)
-    loc_toks = [t for l in locs for t in l.split()]
+    loc_toks = [t for loc in locs for t in loc.split()]
     all_toks = sorted(set(street_toks) | set(loc_toks) | ({state} if state else set()))
     clean = ", ".join(comps)
     return (state, "|".join(dict.fromkeys(locs)), (locs[-1] if locs else ""), pc, hn, hnd, hns, unit,
@@ -443,7 +442,10 @@ def normalize_split(split: str, chunk=20000):
             yield (c["idx"].to_list(), c["name"].to_list(), c["addr"].to_list(), c["country"].to_list())
 
     parts = []
-    with Pool(N_JOBS) as pool:
+    # "spawn", not the Linux default "fork": by this point polars has started its
+    # rayon threads, and forking a process that holds live threads gives the children
+    # mutexes no thread owns -- the pool then hangs at 0% CPU instead of failing.
+    with get_context("spawn").Pool(N_JOBS) as pool:
         for k, part in enumerate(pool.imap(_work, chunks())):
             parts.append(part)
             if k % 100 == 0:

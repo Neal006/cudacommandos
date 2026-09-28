@@ -34,14 +34,22 @@ code/business_entity_resolution/
 
 ## Environment
 
-CPU side (tested on an Apple M3 Max, 48 GB RAM, Python 3.11):
-```bash
-brew install libomp                     # macOS only, needed by LightGBM
-uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
-```
-Peak memory is about 30 GB. Any Linux box with ≥48 GB of RAM works the same way.
+CPU side. The pipeline runs on one Linux box with enough RAM; we used an AWS
+`c7i.48xlarge` (192 vCPU, 384 GB, Ubuntu 22.04, Python 3.11) for the full-data
+stages, and a Windows laptop for packaging, validation and the output checks.
 
-GPU side (cross-encoder only; tested design target: 1× A10G 24 GB): `torch` (CUDA build),
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+Peak memory is about 30 GB, so anything from 48 GB upwards is enough; the large
+instance buys wall-clock, not headroom. `ER_JOBS` controls parallelism and
+defaults to `cpu_count() - 2`. We set it to **64**: the per-worker copies in the
+normalize pool make 192 workers a memory risk with no speed gain, and it also
+fixes LightGBM's `num_threads`, which is worth pinning if you want runs to line
+up with each other (see the determinism note below).
+
+GPU side (cross-encoder only; design target 1× A10G 24 GB): `torch` (CUDA build),
 `transformers`, `polars`, `pyarrow`, `scikit-learn`.
 
 ## Run
@@ -51,25 +59,40 @@ go to `<repo>/work/` (`ER_WORK`) and outputs to `<repo>/output/` (`ER_OUT`).
 
 ```bash
 cd code/business_entity_resolution/src
-../../../.venv/bin/python run_pipeline.py          # full CPU pipeline -> output/*.tsv (validated)
+ER_JOBS=64 ../../../.venv/bin/python run_pipeline.py     # full CPU pipeline -> output/*.tsv
 ```
-Stages can be resumed: `run_pipeline.py --from prune`. Measured wall-clock times on the M3 Max:
-io 10 s, normalize 2 min, sets 1.5 min, blocking 28 min, prune about 100 min (about 60 min with the per-fold scoring
-now in `prune.py`), stage1 58 min, context + decision tuning 19 min, output 20 s. Total is about 3.5 hours.
+Stages resume with `run_pipeline.py --from prune`; earlier stages reuse their parquet
+in `work/`.
 
-Target performance (goal, not a measured leaderboard result): macro F0.5 **>= 0.99010**
-(US **>= 0.99010**, India **>= 0.99010**, singletons **>= 0.99010**).
-Actual measured out-of-fold result on 1.77M held-out train S1, with 20% of S1 hidden as orphans: macro F0.5 **0.98654**
-(US 0.98731, India 0.98537, singletons 0.98733). The test output passes `validate_submission.py --check-ids`.
+Wall-clock on the `c7i.48xlarge` at `ER_JOBS=64`, reading the data from local NVMe:
+
+| stage | time | |
+|---|---|---|
+| io | 6 s | TSV → parquet, 12.53M train and 11.70M test records |
+| splits | < 1 s | 441,315 hidden S1, 1,765,506 in the query set |
+| normalize | 88 s | transliteration dictionary, name and address parsing |
+| sets | 57 s | token and n-gram sets for the feature stage |
+| blocking | 23 min | three sparse passes + reverse pass + exact keys, both splits |
+| prune | 61 min | 5 fold models (≈155 s each), then the streaming scoring pass |
+| stage1 | ~58 min | pairwise LightGBM on the pruned set |
+| context | ~19 min | stage-2 LightGBM, isotonic calibration, decision tuning |
+| output | 20 s | TSVs + validator |
+
+`io → prune` is 86 minutes; the whole pipeline is about 3 hours.
+
+Measured out-of-fold on 1.77M held-out train S1, with 20% of S1 hidden as orphans:
+macro F0.5 **0.98654** (US 0.98731, India 0.98537, singletons 0.98733). On the
+competition leaderboard this output scored **0.985**. The test output passes
+`validate_submission.py --check-ids`.
 
 ### Optional cross-encoder (adds the `ce*` features to the stage-2 model)
 ```bash
-python crossencoder.py export                                  # Mac: work/ce/*.parquet
+python crossencoder.py export                                  # CPU box: work/ce/*.parquet
 # copy work/ce/ to the GPU box, then there:
 python crossencoder.py train --model intfloat/multilingual-e5-small --out ce_e5s
 python crossencoder.py infer --model ce_e5s --band band_train.parquet --out ce_train.parquet
 python crossencoder.py infer --model ce_e5s --band band_test.parquet  --out ce_test.parquet
-# copy ce_train.parquet / ce_test.parquet into work/, then on the Mac:
+# copy ce_train.parquet / ce_test.parquet into work/, then back on the CPU box:
 python run_pipeline.py --from context
 ```
 France pseudo-labels (after a first full run): `python crossencoder.py pseudo`. Then fine-tune on the GPU with
@@ -106,8 +129,55 @@ To compare settings end-to-end: `run_pipeline.py --from prune` with the variable
 `write_output.py --params probe.json --tag NAME` writes `output/matching_results_NAME.tsv` using
 per-country decision parameters, for example
 `{"default": {"method": "ef", "a": 1.0, "b": 0.0, "delta": 0.1}, "France": {"b": -0.5}}`.
-`python make_probes.py France` writes a ready-made grid of France-only variants.
+
+## What is in `src/`
+`src/` holds the sixteen modules `run_pipeline.py` executes and nothing else. Probe and
+experiment scripts written during development are not part of the pipeline and are left
+out of this package, so every file here is on the path from the raw TSVs to the two
+output files.
 
 ## Models and licences
 LightGBM (MIT). Optional cross-encoder: `intfloat/multilingual-e5-small` (MIT, 118M parameters).
 Transliteration fallback: `indic-transliteration` (MIT). No model exceeds 8B parameters.
+No external data, API, geocoder or registry is used: every signal, including the
+transliteration dictionary, is derived from the provided TSVs.
+
+## `output/candidate_pairs.tsv`
+
+`prune.py` writes the candidate set that every later model scores, and that file
+is what ships as `candidate_pairs.tsv`. Measured on the run above:
+
+| | |
+|---|---|
+| blocking union | 101.9 candidates per S1, recall 0.99069 on Q |
+| after pruning | 13,371,630 test pairs, **7.72 per S1**, recall 0.98862 on Q |
+| true pairs lost to pruning | India 0.21%, US 0.21% |
+| test pairs per S1 by country | France 10.25, India 7.80, US 6.63 |
+
+Pruning costs 0.2% of the recall the union had, evenly across both labelled
+countries. France — which has no training labels at all — keeps more candidates
+per entity than either, so the per-country floors are not quietly starving it.
+`prune.py report` reprints these without rescoring, and `work/prune_grid.csv`
+holds the K × min-p grid the settings were chosen from.
+
+### Determinism, and how the two output files relate
+
+The package's two outputs come from two executions: the model stages that
+produced `matching_results.tsv`, and the `io → prune` execution timed above that
+produced `candidate_pairs.tsv`.
+
+Runs of this pipeline are not bit-identical to each other. `ER_JOBS` sets
+LightGBM's `num_threads`, which fixes the order histogram bins are summed in, so
+the prune model's scores shift slightly with thread count and CPU architecture,
+and pairs sitting on the top-K / min-p boundary can fall either side. Across the
+two executions here that affected 2,474 of 5,757,784 matched pairs — 0.043%.
+
+Those 2,474 are included in `candidate_pairs.tsv`. `write_output.py` asserts that
+every match lies inside the candidate set and refuses to write otherwise, so a
+matched pair is by construction a pruned pair; including them keeps the shipped
+files consistent with that invariant. Pin `ER_JOBS` to reproduce a given run.
+
+The file holds 13,374,104 pairs over 1,732,544 entities, 7.72 per entity, with
+2,546 entities keeping no candidate. Every matched id lies inside its entity's
+candidate list, and `validate_submission.py --check-ids` passes on the pair.
+

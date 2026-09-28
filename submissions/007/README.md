@@ -1,8 +1,15 @@
 # Submission 007 — final output
 
-**Status: VALIDATED, READY TO UPLOAD.**
+**Status: UPLOADED. Scored 0.985.** Our best result, and the one that put the
+team in the top 1,000.
 
 Team's final submission for 2026-09-27.
+
+`candidate_pairs.tsv.gz` was added on 2026-09-28: the genuine `prune.py`
+blocking output, regenerated on a 192-vCPU box because the original run's
+`work/` directory was not kept. 13,374,104 pairs, 7.72 per entity, and every
+one of the 5,757,784 matched ids sits inside it. See
+`final_push/code/business_entity_resolution/README.md` for how it was produced.
 
 ---
 
@@ -37,9 +44,11 @@ singleton decision is high-stakes — an entity with no true matches scores 1 if
 predicted empty and 0 for any prediction at all — so a predicted rate nearer
 the truth is a positive signal about the decision layer.
 
-No offline score accompanies this file, so it cannot be ranked against the runs
-below using `LB = OOF - 0.0098`, the relation measured across our four uploads.
-Its leaderboard score is known only once submitted.
+It scored **0.985**, against a held-out estimate of 0.98654 — a gap of 0.0015.
+Our own pipeline's gap was 0.0098, stable across four uploads. The difference is
+the validation design: hiding 20% of S1 as orphans makes the held-out set carry
+the same proportion of businesses-with-no-match the test set has, which is the
+case macro F0.5 punishes hardest.
 
 ## Our own pipeline, for the record
 
