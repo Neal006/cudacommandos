@@ -42,8 +42,8 @@ stages, and a Windows laptop for packaging, validation and the output checks.
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
-Peak memory is about 30 GB, so anything from 48 GB upwards is enough; the large
-instance buys wall-clock, not headroom. `ER_JOBS` controls parallelism and
+Measured peak through `prune` is 41 GB resident, so 64 GB is a sensible floor;
+the large instance buys wall-clock, not headroom. `ER_JOBS` controls parallelism and
 defaults to `cpu_count() - 2`. We set it to **64**: the per-worker copies in the
 normalize pool make 192 workers a memory risk with no speed gain, and it also
 fixes LightGBM's `num_threads`, which is worth pinning if you want runs to line
@@ -78,7 +78,9 @@ Wall-clock on the `c7i.48xlarge` at `ER_JOBS=64`, reading the data from local NV
 | context | ~19 min | stage-2 LightGBM, isotonic calibration, decision tuning |
 | output | 20 s | TSVs + validator |
 
-`io → prune` is 86 minutes; the whole pipeline is about 3 hours.
+`io` through `prune` is **86 minutes measured on this instance**, peaking at
+41 GB resident. The three model stages are marked `~` because they were timed on
+comparable hardware rather than on this box; budget about three hours end to end.
 
 Measured out-of-fold on 1.77M held-out train S1, with 20% of S1 hidden as orphans:
 macro F0.5 **0.98654** (US 0.98731, India 0.98537, singletons 0.98733). On the

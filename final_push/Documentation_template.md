@@ -18,12 +18,13 @@ F0.5. An optional multilingual cross-encoder adds scores on the ambiguous band.
 beforehand: **0.98654**.
 
 **Compute.** Everything is CPU work apart from the optional cross-encoder. The
-full-data stages ran on a single AWS `c7i.48xlarge` (192 vCPU, 384 GB, Ubuntu
+retrieval stages ran on a single AWS `c7i.48xlarge` (192 vCPU, 384 GB, Ubuntu
 22.04, Python 3.11) with `ER_JOBS=64`; a Windows laptop handled packaging,
-validation and the output checks. Peak memory is about 30 GB, so a 48 GB box is
-enough — the large instance buys wall-clock, not headroom. `io → prune` takes 86
-minutes there and the whole pipeline about 3 hours. No managed or third-party
-service is used at any point: the only inputs are the provided TSVs.
+validation and the output checks. `io → prune` took **86 minutes** there, with a
+measured peak of **41 GB** resident, so 64 GB is a sensible floor — the large
+instance buys wall-clock, not headroom. The model stages add roughly 80 minutes
+on comparable hardware, putting a full run near three hours. No managed or
+third-party service is used at any point: the only inputs are the provided TSVs.
 
 ---
 
@@ -31,9 +32,10 @@ service is used at any point: the only inputs are the provided TSVs.
 
 ### 2.1 Problem Analysis
 
-- F0.5 weights precision twice as heavily as recall, and singletons count: an S1
-  with no true match scores 1 only if we predict nothing. The decision of *how
-  many* candidates to output per S1 is therefore as important as the scoring.
+- F0.5 weights precision four times as heavily as recall (1/β² at β=0.5), and
+  singletons count: an S1 with no true match scores 1 only if we predict nothing.
+  The decision of *how many* candidates to output per S1 is therefore as
+  important as the scoring.
 - Ground truth is a partition: an S2/S3 record belongs to at most one S1. How
   strongly *other* S1 entities claim a record is signal.
 - Names carry junk prefixes, aliases, domains ("Name | www.x.com"), leet-speak
@@ -170,6 +172,20 @@ Reproduce: place the data at `dataset/{train,test}/`, then
 `cd code/business_entity_resolution/src && ER_JOBS=64 python run_pipeline.py`.
 `ER_JOBS` also fixes LightGBM's thread count, so pinning it is what makes two
 runs line up; `README.md` covers this under "Determinism".
+
+`src/` contains the sixteen modules `run_pipeline.py` executes and nothing else.
+Probe and experiment scripts written during development are not part of the
+pipeline and are not included, so every file in the package is on the path from
+the raw TSVs to the two outputs.
+
+### A.1 Constraints
+
+| constraint | how this solution meets it |
+|---|---|
+| no external data, APIs, geocoders or registries | every signal is derived from the provided TSVs. The Indic→Latin dictionary is *learnt from the training pairs*, not taken from an external resource; the locality→state map is learnt from Source 1. No network call anywhere in the pipeline. |
+| final model MIT or Apache-2.0, ≤ 8B parameters | LightGBM (MIT). Optional cross-encoder `intfloat/multilingual-e5-small` (MIT, **118M** parameters). Supporting libraries: rapidfuzz (MIT), `indic-transliteration` (MIT), scikit-learn (BSD-3), pandas / numpy / scipy (BSD-3), polars (MIT). |
+| `country` is an open set | used only as a partition key and rule-table lookup — never one-hot encoded, never used to filter. An unseen country flows through every stage. |
+| reproducible end to end | one entry point, stages resumable, dependencies pinned; `ER_JOBS` pins thread count for run-to-run agreement. |
 
 ### B. Additional Results
 

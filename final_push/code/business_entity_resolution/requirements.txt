@@ -9,7 +9,13 @@ sparse_dot_topn==1.2.0
 rapidfuzz==3.14.6
 indic-transliteration==2.3.82
 lightgbm==4.7.0
+# The list above is everything the default pipeline needs. The rest are optional
+# paths, imported lazily and off by default, so install them only if you use one.
+#
 # --- GPU box only (cross-encoder), CUDA 12.x build of torch ---
 # torch>=2.3
 # transformers>=4.44
 # accelerate>=0.33
+#
+# --- alternate stage-2 backend, selected with ER_STAGE2=xgb (default: lgb) ---
+# xgboost>=2.0
