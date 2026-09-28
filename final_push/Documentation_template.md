@@ -122,10 +122,24 @@ including the empty set.
   hiding a fifth of S1 makes the held-out set carry the same share of
   businesses-with-no-match the test set has, and that is the case macro F0.5
   punishes hardest. The test output passes `validate_submission.py --check-ids`.
+- **Recall ceiling.** The blocking union holds 0.99069 of the true pairs at 101.9
+  candidates per S1; pruning takes that to 0.98862 at 7.72. Retrieval is therefore
+  not the binding constraint — the distance between 0.98862 and the final score is
+  the matcher's, and Appendix B.2 shows buying more recall costs more than it
+  returns under F0.5.
 - **Common false positives (wrong merges):** same-name businesses in the same
-  locality with different house numbers or units (branches, chains).
+  locality with different house numbers or units (branches, chains). This is what
+  the twin flag and the house-number *distance* feature exist for: 12 vs 14 is
+  weaker evidence against a match than 12 vs 890.
 - **Common false negatives (missed matches):** records whose name differs by
-  script, alias or rebranding and whose address is sparse or missing.
+  script, alias or rebranding and whose address is sparse or missing. India is the
+  harder country out-of-fold (0.98537 against US 0.98731), and native-script names
+  are why the transliteration dictionary is learnt from the training pairs rather
+  than taken from a rule table.
+- **Singletons.** 5.6% of entities have no true match, and predicting anything for
+  them scores 0 instead of 1. Out-of-fold the singleton segment scores 0.98733 —
+  in line with the overall number, which is the evidence that the expected-F0.5
+  decoder is choosing the empty set when it should and not merely often.
 
 ---
 
@@ -159,4 +173,76 @@ runs line up; `README.md` covers this under "Determinism".
 
 ### B. Additional Results
 
-Per-segment F0.5 above; prune recall diagnostics are printed by `prune.py report`.
+#### B.1 Recall through the pipeline
+
+Every true pair the blocking union contains, and what survives each stage, measured
+on the query set Q (1,765,506 train S1 with 20% of S1 hidden as orphans):
+
+| stage | candidates per S1 | recall on Q |
+|---|---|---|
+| blocking union (3 forward passes + reverse + exact keys) | 101.9 | 0.99069 |
+| after the prune model | 7.72 | 0.98862 |
+
+Pruning discards 92% of the union and 0.2% of the recall. The 0.99069 ceiling is
+what any matcher downstream is working against; the 3.7 points between that and
+the final score sit in the matcher, not in retrieval.
+
+#### B.2 Choosing K and min-p
+
+`prune.py` writes `work/prune_grid.csv`: Q recall and candidate volume across
+K ∈ {5…40} × min-p ∈ {0.02…0.0005}, from a single scoring pass, so the rule can
+be set without re-running the stage. Representative rows, against 6,109,055 true
+pairs in Q:
+
+| K | min-p | pairs per S1 | true pairs kept | recall |
+|---|---|---|---|---|
+| 5 | 0.005 | 4.42 | 5,713,912 | 0.93532 |
+| 10 | 0.005 | 6.00 | 6,032,251 | 0.98743 |
+| 20 | 0.02 | 4.60 | 6,001,098 | 0.98233 |
+| 20 | 0.01 | 5.75 | 6,031,243 | 0.98726 |
+| **20** | **0.005** | **6.42** | **6,039,534** | **0.98862** |
+| 20 | 0.002 | 7.87 | 6,047,524 | 0.98993 |
+| 20 | 0.0005 | 10.30 | 6,051,247 | 0.99054 |
+| 40 | 0.005 | 6.44 | 6,039,716 | 0.98865 |
+| 40 | 0.0005 | 10.86 | 6,052,666 | 0.99077 |
+
+Two things fall out of the grid, and they set the operating point:
+
+- **K stops mattering at 20.** Going 20 → 40 at min-p 0.005 recovers **182** more
+  true pairs out of six million. The per-S1 cap is not what is binding; the score
+  floor is.
+- **min-p is the real lever, and it is expensive.** Dropping 0.005 → 0.0005 buys
+  0.0019 recall for 60% more candidates — every one of which the ~75-feature
+  stage and both GBDTs then have to score. K=5 is the only genuinely bad setting
+  in the table, giving up 325,622 true pairs.
+
+`(K=20, min-p=0.005)` is the knee: the last point where recall is still being
+bought at a sensible price. Because F0.5 weights precision four times recall,
+paying 60% more compute for 0.2% more recall that the matcher must then reject
+is the wrong trade.
+
+#### B.3 Where the pruning loss falls
+
+| | share of true pairs lost |
+|---|---|
+| India | 0.21% |
+| US | 0.21% |
+| Source 2 | 0.20% |
+| Source 3 | 0.22% |
+
+Even across both labelled countries and both noisy sources — no segment is
+absorbing the loss on behalf of the others.
+
+Candidates per S1 on the test set, by country: **France 10.25, India 7.80,
+US 6.63**. France is the one country with no training labels anywhere, so this
+is a label-free check that the per-country floors are not quietly starving it;
+it keeps more candidates per entity than either country we can measure.
+
+#### B.4 Reproducibility
+
+Runs are not bit-identical to one another. `ER_JOBS` sets LightGBM's
+`num_threads`, which fixes the order histogram bins are summed in, so prune
+scores shift slightly with thread count and CPU architecture and pairs sitting
+exactly on the top-K / min-p boundary can fall either way. Between two executions
+of the pipeline this moved 2,474 of 5,757,784 matched pairs — 0.043%. Pin
+`ER_JOBS` to make two runs agree.
