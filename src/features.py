@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from rapidfuzz import fuzz
 from rapidfuzz.distance import JaroWinkler
+from sentence_transformers import SentenceTransformer
 
 import config as C
 
@@ -144,3 +145,42 @@ def add_rank_features(feat: pd.DataFrame, pairs: pd.DataFrame, score_col: str) -
     df["n_candidates"] = g.transform("size").values
     df["is_best"] = (df["rank_in_entity"] == 1).astype(float)
     return df
+
+_ST_MODEL = None
+
+
+def _get_st_model():
+    global _ST_MODEL
+    if _ST_MODEL is None:
+        _ST_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+    return _ST_MODEL
+
+
+def build_embedding_features(pairs: pd.DataFrame, s1: pd.DataFrame, others: pd.DataFrame) -> pd.DataFrame:
+    """Sentence-transformer cosine similarity on core_name / core_addr.
+
+    Frozen pretrained model, CPU inference only — no fine-tuning, no GPU
+    required. Encodes each unique S1/S2/S3 record once, not per-pair.
+    """
+    model = _get_st_model()
+
+    def _encode_map(df, col):
+        texts = df[col].fillna("").tolist()
+        emb = model.encode(texts, batch_size=256, show_progress_bar=False,
+                            normalize_embeddings=True)
+        return dict(zip(df[C.ID], emb))
+
+    s1_name = _encode_map(s1, "_core_name")
+    ot_name = _encode_map(others, "_core_name")
+    s1_addr = _encode_map(s1, "_core_addr")
+    ot_addr = _encode_map(others, "_core_addr")
+
+    L_name = np.stack([s1_name[i] for i in pairs["s1_id"]])
+    R_name = np.stack([ot_name[i] for i in pairs["cand_id"]])
+    L_addr = np.stack([s1_addr[i] for i in pairs["s1_id"]])
+    R_addr = np.stack([ot_addr[i] for i in pairs["cand_id"]])
+
+    return pd.DataFrame({
+        "st_name_cosine": np.sum(L_name * R_name, axis=1),
+        "st_addr_cosine": np.sum(L_addr * R_addr, axis=1),
+    })

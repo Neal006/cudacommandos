@@ -106,6 +106,8 @@ def featurize(pairs, which):
         ignore_index=True,
     ))
     feat = F.build_pair_features(pairs, s1f, otf)
+    emb = F.build_embedding_features(pairs, s1f, otf)
+    feat = pd.concat([feat, emb], axis=1)
     del s1f, otf
     gc.collect()
     return F.add_rank_features(feat, pairs, "core_token_sort")
@@ -177,9 +179,9 @@ def main(blocking_only=False, sample=None):
         num_threads=0,
     )
 
-    oof = np.zeros(len(X))
+        oof = np.zeros(len(X))
     models = []
-    # Group by Source-1 entity so an entity's pairs never straddle folds.
+
     for fold, (tr, va) in enumerate(GroupKFold(n_splits=C.N_FOLDS).split(X, y, groups)):
         m = lgb.train(
             params, lgb.Dataset(X.iloc[tr], y[tr]), num_boost_round=2000,
@@ -188,11 +190,12 @@ def main(blocking_only=False, sample=None):
         )
         oof[va] = m.predict(X.iloc[va], num_iteration=m.best_iteration)
         models.append(m)
+
         log(f"fold {fold} done (best_iter={m.best_iteration})")
 
     s1_ids = s1[C.ID].tolist()
     thr, cv = tune_threshold(truth, pairs, oof, s1_ids)
-    log(f"BEST THRESHOLD {thr:.2f} -> OOF macro F_0.5 = {cv:.4f}")
+    log(f"LGB-ONLY (ST features)  thr={thr:.2f}  OOF macro F_0.5={cv:.4f}")
 
     keep = pairs.assign(score=oof)
     keep = keep[keep["score"] >= thr]
